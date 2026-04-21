@@ -1,0 +1,78 @@
+{% extends "base/layout.html" %}
+{% block title %}Журнал аудита{% endblock %}
+
+{% block content %}
+<div class="page-wrap">
+
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Журнал аудита</h1>
+      <p class="page-meta">Все действия пользователей системы · {{ logs|length }} записей</p>
+    </div>
+    <div class="filter-bar">
+      <form method="get" class="filter-form">
+        <input class="form-input form-input-sm" type="text" name="q"
+               value="{{ request.GET.q }}" placeholder="Поиск по email, IP...">
+        <select class="form-input form-input-sm form-select" name="action">
+          <option value="">Все действия</option>
+          {% for val, label in action_choices %}
+          <option value="{{ val }}" {% if request.GET.action == val %}selected{% endif %}>
+            {{ label }}
+          </option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-ghost btn-sm">Фильтр</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="file-table-wrap">
+    <table class="file-table audit-table">
+      <thead>
+        <tr>
+          <th>Время</th>
+          <th>Пользователь</th>
+          <th>Действие</th>
+          <th>Объект</th>
+          <th>IP-адрес</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr class="audit-row audit-{{ log.action }}">
+          <td class="mono text-muted">{{ log.timestamp|date:"d.m.Y H:i:s" }}</td>
+          <td>
+            {% if log.user %}
+              <span class="user-role role-{{ log.user.role }} role-xs">
+                {{ log.user.get_role_display }}
+              </span>
+              {{ log.user.email }}
+            {% else %}
+              <span class="text-muted">Аноним</span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="audit-badge audit-badge-{{ log.action }}">
+              {{ log.get_action_display }}
+            </span>
+          </td>
+          <td class="text-muted">
+            {% if log.object_repr %}
+              <span class="mono" title="{{ log.object_type }}:{{ log.object_id }}">
+                {{ log.object_repr|truncatechars:40 }}
+              </span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="mono text-muted">{{ log.ip_address|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="5" class="empty-cell">Записей не найдено</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+</div>
+{% endblock %}

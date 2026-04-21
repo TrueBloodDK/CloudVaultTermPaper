@@ -1,0 +1,66 @@
+{% extends "base/layout.html" %}
+{% block title %}Регистрация{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+  <div class="auth-card">
+
+    <div class="auth-header">
+      <div class="auth-logo">⬡</div>
+      <h1 class="auth-title">Регистрация</h1>
+      <p class="auth-subtitle">Создание аккаунта в системе</p>
+    </div>
+
+    {% if errors %}
+    <div class="form-error-banner">
+      {% for field, errs in errors.items %}
+        {% for e in errs %}<div>{{ e }}</div>{% endfor %}
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="post" action="{% url 'auth:register' %}" class="auth-form">
+      {% csrf_token %}
+      <div class="form-group">
+        <label class="form-label">Полное имя</label>
+        <input class="form-input" type="text" name="full_name"
+               placeholder="Иванов Иван Иванович"
+               value="{{ form_data.full_name|default:'' }}" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input class="form-input" type="email" name="email"
+               placeholder="user@company.ru"
+               value="{{ form_data.email|default:'' }}" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Отдел</label>
+        <input class="form-input" type="text" name="department"
+               placeholder="Бухгалтерия, ИТ, HR..."
+               value="{{ form_data.department|default:'' }}">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Пароль</label>
+          <input class="form-input" type="password" name="password"
+                 placeholder="Мин. 10 символов" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Повтор пароля</label>
+          <input class="form-input" type="password" name="password_confirm"
+                 placeholder="••••••••••" required>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-full">
+        Создать аккаунт
+      </button>
+    </form>
+
+    <div class="auth-footer">
+      Уже есть аккаунт?
+      <a href="{% url 'auth:login' %}">Войти</a>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

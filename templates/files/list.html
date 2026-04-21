@@ -1,0 +1,136 @@
+{% extends "base/layout.html" %}
+{% block title %}Файлы{% endblock %}
+
+{% block content %}
+<div class="page-wrap">
+
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Файлы</h1>
+      <p class="page-meta">
+        {% if user.is_admin %}Все файлы системы{% else %}Ваши файлы и файлы с общим доступом{% endif %}
+        · <span class="mono">{{ files|length }}</span> объект(ов)
+      </p>
+    </div>
+    <button class="btn btn-primary" onclick="openUploadModal()">
+      + Загрузить файл
+    </button>
+  </div>
+
+  {% if files %}
+  <div class="file-table-wrap">
+    <table class="file-table">
+      <thead>
+        <tr>
+          <th>Имя файла</th>
+          <th>Тип</th>
+          <th>Размер</th>
+          <th>Владелец</th>
+          <th>Загружен</th>
+          <th>Действия</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for file in files %}
+        <tr class="file-row" data-id="{{ file.id }}">
+          <td class="file-name">
+            <span class="file-icon">{{ file.mime_type|slice:":5" }}</span>
+            <span>{{ file.original_name }}</span>
+          </td>
+          <td class="mono text-muted">{{ file.mime_type }}</td>
+          <td class="mono">{{ file.size_kb }} КБ</td>
+          <td class="text-muted">{{ file.owner.email }}</td>
+          <td class="mono text-muted">{{ file.created_at|date:"d.m.Y H:i" }}</td>
+          <td class="file-actions">
+            <a href="{% url 'files:download' file.id %}"
+               class="btn btn-sm btn-ghost" title="Скачать">↓ Скачать</a>
+            {% if user.is_admin or file.owner == user %}
+            <button class="btn btn-sm btn-ghost"
+                    onclick="openShareModal('{{ file.id }}', '{{ file.original_name }}')"
+                    title="Поделиться">⇄ Доступ</button>
+            <form method="post" action="{% url 'files:delete' file.id %}"
+                  style="display:inline"
+                  onsubmit="return confirm('Удалить «{{ file.original_name }}»?')">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-danger" title="Удалить">✕</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-icon">⬡</div>
+    <p class="empty-text">Файлов пока нет</p>
+    <p class="empty-sub">Загрузите первый файл, нажав кнопку выше</p>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- Модальное окно загрузки файла -->
+<div class="modal-backdrop" id="upload-modal" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title">Загрузка файла</h2>
+      <button class="modal-close" onclick="closeUploadModal()">×</button>
+    </div>
+    <form method="post" action="{% url 'files:upload' %}"
+          enctype="multipart/form-data" class="modal-form">
+      {% csrf_token %}
+      <div class="drop-zone" id="drop-zone">
+        <div class="drop-icon">↑</div>
+        <p class="drop-text">Перетащите файл сюда или нажмите для выбора</p>
+        <p class="drop-sub">Макс. 50 МБ · PDF, DOCX, XLSX, JPG, PNG, ZIP</p>
+        <input type="file" name="file" id="file-input" class="drop-input" required>
+      </div>
+      <div id="file-preview" class="file-preview" style="display:none">
+        <span class="preview-name" id="preview-name"></span>
+        <span class="preview-size" id="preview-size"></span>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Описание (необязательно)</label>
+        <input class="form-input" type="text" name="description"
+               placeholder="Краткое описание файла">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeUploadModal()">Отмена</button>
+        <button type="submit" class="btn btn-primary">Зашифровать и загрузить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Модальное окно доступа -->
+<div class="modal-backdrop" id="share-modal" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title">Управление доступом</h2>
+      <button class="modal-close" onclick="closeShareModal()">×</button>
+    </div>
+    <p class="modal-file-name" id="share-file-name"></p>
+    <form method="post" id="share-form" class="modal-form">
+      {% csrf_token %}
+      <div class="form-group">
+        <label class="form-label">Email пользователя</label>
+        <input class="form-input" type="email" name="user_email"
+               placeholder="colleague@company.ru" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Уровень доступа</label>
+        <select class="form-input form-select" name="access">
+          <option value="read">Чтение (просмотр метаданных)</option>
+          <option value="download">Скачивание</option>
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeShareModal()">Отмена</button>
+        <button type="submit" class="btn btn-primary">Предоставить доступ</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

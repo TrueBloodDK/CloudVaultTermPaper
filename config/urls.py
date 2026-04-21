@@ -4,16 +4,24 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.shortcuts import redirect
 
 urlpatterns = [
     path("admin/", admin.site.urls),
 
-    # API v1
-    path("api/v1/auth/", include("users.urls")),
+    # Веб-интерфейс
+    path("auth/",  include("users.web_urls")),
+    path("files/", include("files.web_urls")),
+    path("audit/", include("audit.web_urls")),
+
+    # API v1 (для будущего / мобильного клиента)
+    path("api/v1/auth/",  include("users.urls")),
     path("api/v1/files/", include("files.urls")),
     path("api/v1/audit/", include("audit.urls")),
+
+    # Редирект с корня на список файлов
+    path("", lambda req: redirect("files:list")),
 ]
 
-# В режиме разработки — раздаём медиафайлы через Django
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

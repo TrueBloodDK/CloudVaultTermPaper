@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}SecureVault{% endblock %} — SecureVault</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  {% load static %}
+  <link rel="stylesheet" href="{% static 'css/main.css' %}">
+</head>
+<body>
+
+{% if user.is_authenticated %}
+<nav class="navbar">
+  <a href="{% url 'files:list' %}" class="nav-brand">
+    <span class="brand-icon">⬡</span>
+    <span class="brand-name">SecureVault</span>
+  </a>
+  <div class="nav-links">
+    <a href="{% url 'files:list' %}"
+       class="nav-link {% if request.resolver_match.namespace == 'files' %}active{% endif %}">
+      Файлы
+    </a>
+    {% if user.is_admin %}
+    <a href="{% url 'audit:list' %}"
+       class="nav-link {% if request.resolver_match.namespace == 'audit' %}active{% endif %}">
+      Аудит
+    </a>
+    {% endif %}
+  </div>
+  <div class="nav-user">
+    <span class="user-role role-{{ user.role }}">{{ user.get_role_display }}</span>
+    <span class="user-name">{{ user.full_name }}</span>
+    <form method="post" action="{% url 'auth:logout' %}" style="display:inline">
+      {% csrf_token %}
+      <button type="submit" class="btn-logout">Выйти</button>
+    </form>
+  </div>
+</nav>
+{% endif %}
+
+<main class="main-content">
+  {% if messages %}
+  <div class="messages">
+    {% for message in messages %}
+    <div class="message message-{{ message.tags }}">
+      <span>{{ message }}</span>
+      <button class="message-close" onclick="this.parentElement.remove()">×</button>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% block content %}{% endblock %}
+</main>
+
+<script src="{% static 'js/main.js' %}"></script>
+</body>
+</html>
