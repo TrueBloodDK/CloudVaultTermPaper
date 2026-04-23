@@ -488,3 +488,25 @@ body {
 .audit-badge-file_view     { background: var(--bg-3);        color: var(--text-secondary); border-color: var(--border); }
 .audit-badge-access_denied { background: var(--red-dim);    color: var(--red);    border-color: rgba(245,95,95,0.3); }
 .audit-badge-user_create   { background: var(--yellow-dim); color: var(--yellow); border-color: rgba(245,200,66,0.3); }
+
+/* ── Отделы и категории ── */
+
+.dept-badge {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid rgba(79,158,255,0.25);
+}
+
+.category-badge {
+  font-size: 0.78rem;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: var(--bg-3);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}

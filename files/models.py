@@ -1,9 +1,40 @@
-"""Модели для хранения файлов и метаданных."""
+"""Модели для хранения файлов, категорий и метаданных."""
 
 import uuid
 import os
 from django.db import models
 from django.conf import settings
+
+
+class FileCategory(models.Model):
+    """
+    Категория файлов с групповым доступом по отделам.
+
+    Пример: "Кадровые документы" доступна отделам HR и Директорат.
+    Все файлы в этой категории автоматически видны сотрудникам этих отделов.
+    """
+
+    name = models.CharField(max_length=100, unique=True, verbose_name="Название")
+    description = models.TextField(blank=True, verbose_name="Описание")
+    departments = models.ManyToManyField(
+        "users.Department",
+        blank=True,
+        related_name="file_categories",
+        verbose_name="Разрешённые отделы",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создана")
+
+    class Meta:
+        verbose_name = "Категория файлов"
+        verbose_name_plural = "Категории файлов"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def department_list(self):
+        return ", ".join(self.departments.values_list("name", flat=True)) or "—"
 
 
 def upload_to(instance, filename):
@@ -28,6 +59,14 @@ class File(models.Model):
         on_delete=models.CASCADE,
         related_name="files",
         verbose_name="Владелец",
+    )
+    category = models.ForeignKey(
+        FileCategory,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="files",
+        verbose_name="Категория",
     )
     original_name = models.CharField(max_length=255, verbose_name="Оригинальное имя")
     encrypted_file = models.FileField(upload_to=upload_to, verbose_name="Файл (зашифрован)")
@@ -59,8 +98,8 @@ class File(models.Model):
 
 class FilePermission(models.Model):
     """
-    Права доступа к файлу для конкретного пользователя.
-    Позволяет делиться файлами с коллегами.
+    Явные права доступа к файлу для конкретного пользователя.
+    Работает поверх категорийного доступа — для исключений.
     """
 
     class Access(models.TextChoices):

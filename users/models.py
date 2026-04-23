@@ -1,8 +1,31 @@
-"""Кастомная модель пользователя с ролями."""
+"""Кастомная модель пользователя с ролями и отделами."""
 
 import uuid
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
+
+
+class Department(models.Model):
+    """
+    Отдел организации.
+    Используется для группового доступа к категориям файлов.
+    """
+
+    name = models.CharField(max_length=100, unique=True, verbose_name="Название")
+    description = models.TextField(blank=True, verbose_name="Описание")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создан")
+
+    class Meta:
+        verbose_name = "Отдел"
+        verbose_name_plural = "Отделы"
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def user_count(self):
+        return self.users.count()
 
 
 class UserManager(BaseUserManager):
@@ -31,7 +54,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     Роли:
         ADMIN   — полный доступ ко всем файлам и настройкам
         MANAGER — может управлять файлами своей группы
-        USER    — доступ только к своим файлам
+        USER    — доступ только к своим файлам + файлам отдела
     """
 
     class Role(models.TextChoices):
@@ -48,13 +71,20 @@ class User(AbstractBaseUser, PermissionsMixin):
         default=Role.USER,
         verbose_name="Роль",
     )
-    department = models.CharField(
-        max_length=100, blank=True, verbose_name="Отдел"
+    department = models.ForeignKey(
+        Department,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="users",
+        verbose_name="Отдел",
     )
     is_active = models.BooleanField(default=True, verbose_name="Активен")
     is_staff = models.BooleanField(default=False, verbose_name="Персонал")
     date_joined = models.DateTimeField(auto_now_add=True, verbose_name="Дата регистрации")
-    last_login_ip = models.GenericIPAddressField(null=True, blank=True, verbose_name="IP последнего входа")
+    last_login_ip = models.GenericIPAddressField(
+        null=True, blank=True, verbose_name="IP последнего входа"
+    )
 
     objects = UserManager()
 

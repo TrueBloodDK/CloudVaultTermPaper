@@ -8,8 +8,11 @@
     <div>
       <h1 class="page-title">Файлы</h1>
       <p class="page-meta">
-        {% if user.is_admin %}Все файлы системы{% else %}Ваши файлы и файлы с общим доступом{% endif %}
+        {% if user.is_admin %}Все файлы системы{% else %}Доступные вам файлы{% endif %}
         · <span class="mono">{{ files|length }}</span> объект(ов)
+        {% if user.department %}
+        · отдел: <span class="dept-badge">{{ user.department }}</span>
+        {% endif %}
       </p>
     </div>
     <button class="btn btn-primary" onclick="openUploadModal()">
@@ -23,7 +26,7 @@
       <thead>
         <tr>
           <th>Имя файла</th>
-          <th>Тип</th>
+          <th>Категория</th>
           <th>Размер</th>
           <th>Владелец</th>
           <th>Загружен</th>
@@ -32,27 +35,34 @@
       </thead>
       <tbody>
         {% for file in files %}
-        <tr class="file-row" data-id="{{ file.id }}">
+        <tr class="file-row">
           <td class="file-name">
             <span class="file-icon">{{ file.mime_type|slice:":5" }}</span>
             <span>{{ file.original_name }}</span>
           </td>
-          <td class="mono text-muted">{{ file.mime_type }}</td>
+          <td>
+            {% if file.category %}
+            <span class="category-badge">{{ file.category.name }}</span>
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
+          </td>
           <td class="mono">{{ file.size_kb }} КБ</td>
           <td class="text-muted">{{ file.owner.email }}</td>
           <td class="mono text-muted">{{ file.created_at|date:"d.m.Y H:i" }}</td>
           <td class="file-actions">
             <a href="{% url 'files:download' file.id %}"
-               class="btn btn-sm btn-ghost" title="Скачать">↓ Скачать</a>
+               class="btn btn-sm btn-ghost">↓ Скачать</a>
             {% if user.is_admin or file.owner == user %}
             <button class="btn btn-sm btn-ghost"
-                    onclick="openShareModal('{{ file.id }}', '{{ file.original_name }}')"
-                    title="Поделиться">⇄ Доступ</button>
+                    onclick="openShareModal('{{ file.id }}', '{{ file.original_name }}')">
+              ⇄ Доступ
+            </button>
             <form method="post" action="{% url 'files:delete' file.id %}"
                   style="display:inline"
                   onsubmit="return confirm('Удалить «{{ file.original_name }}»?')">
               {% csrf_token %}
-              <button type="submit" class="btn btn-sm btn-danger" title="Удалить">✕</button>
+              <button type="submit" class="btn btn-sm btn-danger">✕</button>
             </form>
             {% endif %}
           </td>
@@ -65,13 +75,13 @@
   <div class="empty-state">
     <div class="empty-icon">⬡</div>
     <p class="empty-text">Файлов пока нет</p>
-    <p class="empty-sub">Загрузите первый файл, нажав кнопку выше</p>
+    <p class="empty-sub">Загрузите первый файл или обратитесь к администратору</p>
   </div>
   {% endif %}
 
 </div>
 
-<!-- Модальное окно загрузки файла -->
+<!-- Модальное окно загрузки -->
 <div class="modal-backdrop" id="upload-modal" style="display:none">
   <div class="modal">
     <div class="modal-header">
@@ -90,6 +100,15 @@
       <div id="file-preview" class="file-preview" style="display:none">
         <span class="preview-name" id="preview-name"></span>
         <span class="preview-size" id="preview-size"></span>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Категория</label>
+        <select class="form-input form-select" name="category">
+          <option value="">— Без категории —</option>
+          {% for cat in categories %}
+          <option value="{{ cat.id }}">{{ cat.name }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="form-group">
         <label class="form-label">Описание (необязательно)</label>
@@ -122,7 +141,7 @@
       <div class="form-group">
         <label class="form-label">Уровень доступа</label>
         <select class="form-input form-select" name="access">
-          <option value="read">Чтение (просмотр метаданных)</option>
+          <option value="read">Чтение</option>
           <option value="download">Скачивание</option>
         </select>
       </div>

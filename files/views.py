@@ -1,10 +1,8 @@
-"""Представления для работы с файлами."""
+"""API-представления для работы с файлами (DRF)."""
 
 import io
 from django.http import FileResponse
-from django.core.files.base import ContentFile
 from django.shortcuts import get_object_or_404
-from django.db.models import Q
 
 from rest_framework import generics, status
 from rest_framework.views import APIView
@@ -19,14 +17,15 @@ from .serializers import (
     FilePermissionSerializer,
 )
 from .encryption import encrypt_file, decrypt_file, compute_checksum
+from .access import can_access_file, get_accessible_files
 from users.models import User
-from users.permissions import IsOwnerOrAdmin, IsAdmin
+from users.permissions import IsAdmin
 from audit.models import AuditLog
 from audit.utils import log_action
 
 
 class FileUploadView(APIView):
-    """POST /api/v1/files/ — загрузка и шифрование файла."""
+    """POST /api/v1/files/upload/ — загрузка и шифрование файла."""
 
     permission_classes = [IsAuthenticated]
 
@@ -37,11 +36,9 @@ class FileUploadView(APIView):
         uploaded = request.FILES["file"]
         raw_data = uploaded.read()
 
-        # Считаем контрольную сумму до шифрования
         checksum = compute_checksum(raw_data)
-
-        # Шифруем содержимое
         encrypted_data = encrypt_file(raw_data)
+        from django.core.files.base import ContentFile
         encrypted_file = ContentFile(encrypted_data, name=uploaded.name)
 
         file_obj = File.objects.create(
@@ -64,22 +61,13 @@ class FileUploadView(APIView):
 
 
 class FileListView(generics.ListAPIView):
-    """GET /api/v1/files/ — список файлов текущего пользователя."""
+    """GET /api/v1/files/ — список доступных файлов."""
 
     permission_classes = [IsAuthenticated]
     serializer_class = FileListSerializer
 
     def get_queryset(self):
-        user = self.request.user
-        if user.is_admin:
-            # Администратор видит все активные файлы
-            return File.objects.filter(status=File.Status.ACTIVE).select_related("owner")
-
-        # Обычный пользователь видит свои файлы + файлы с предоставленным доступом
-        return File.objects.filter(
-            Q(owner=user) | Q(permissions__user=user),
-            status=File.Status.ACTIVE,
-        ).select_related("owner").distinct()
+        return get_accessible_files(self.request.user)
 
 
 class FileDetailView(generics.RetrieveAPIView):
@@ -90,41 +78,24 @@ class FileDetailView(generics.RetrieveAPIView):
 
     def get_object(self):
         file_obj = get_object_or_404(File, pk=self.kwargs["pk"], status=File.Status.ACTIVE)
-        self._check_access(file_obj)
+        if not can_access_file(self.request.user, file_obj, self.request):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Нет доступа к этому файлу")
         log_action(self.request, AuditLog.Action.FILE_VIEW, obj=file_obj)
         return file_obj
 
-    def _check_access(self, file_obj):
-        user = self.request.user
-        if user.is_admin or file_obj.owner == user:
-            return
-        has_perm = file_obj.permissions.filter(user=user).exists()
-        if not has_perm:
-            log_action(self.request, AuditLog.Action.ACCESS_DENIED, obj=file_obj)
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied("Нет доступа к этому файлу")
-
 
 class FileDownloadView(APIView):
-    """GET /api/v1/files/<id>/download/ — скачивание (расшифровка) файла."""
+    """GET /api/v1/files/<id>/download/ — скачивание файла."""
 
     permission_classes = [IsAuthenticated]
 
     def get(self, request, pk):
         file_obj = get_object_or_404(File, pk=pk, status=File.Status.ACTIVE)
 
-        # Проверяем права: владелец, admin или явный доступ
-        user = request.user
-        if not user.is_admin and file_obj.owner != user:
-            has_perm = file_obj.permissions.filter(
-                user=user,
-                access__in=[FilePermission.Access.READ, FilePermission.Access.DOWNLOAD],
-            ).exists()
-            if not has_perm:
-                log_action(request, AuditLog.Action.ACCESS_DENIED, obj=file_obj)
-                return Response({"detail": "Нет доступа"}, status=status.HTTP_403_FORBIDDEN)
+        if not can_access_file(request.user, file_obj, request):
+            return Response({"detail": "Нет доступа"}, status=status.HTTP_403_FORBIDDEN)
 
-        # Читаем и расшифровываем
         encrypted_data = file_obj.encrypted_file.read()
         raw_data = decrypt_file(encrypted_data)
 
@@ -137,13 +108,12 @@ class FileDownloadView(APIView):
             as_attachment=True,
             filename=file_obj.original_name,
         )
-        # Заголовок с контрольной суммой — клиент может проверить целостность
         response["X-Checksum-SHA256"] = file_obj.checksum
         return response
 
 
 class FileDeleteView(APIView):
-    """DELETE /api/v1/files/<id>/ — мягкое удаление файла."""
+    """DELETE /api/v1/files/<id>/delete/ — мягкое удаление файла."""
 
     permission_classes = [IsAuthenticated]
 
@@ -158,12 +128,11 @@ class FileDeleteView(APIView):
         file_obj.save(update_fields=["status", "updated_at"])
 
         log_action(request, AuditLog.Action.FILE_DELETE, obj=file_obj)
-
         return Response({"detail": "Файл удалён"}, status=status.HTTP_200_OK)
 
 
 class FileShareView(APIView):
-    """POST /api/v1/files/<id>/share/ — предоставление доступа к файлу."""
+    """POST /api/v1/files/<id>/share/ — предоставление доступа."""
 
     permission_classes = [IsAuthenticated]
 
@@ -171,8 +140,10 @@ class FileShareView(APIView):
         file_obj = get_object_or_404(File, pk=pk, status=File.Status.ACTIVE)
 
         if not request.user.is_admin and file_obj.owner != request.user:
-            return Response({"detail": "Только владелец может делиться файлом"},
-                            status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {"detail": "Только владелец может делиться файлом"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         serializer = FilePermissionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
