@@ -27,11 +27,25 @@
        class="nav-link {% if request.resolver_match.namespace == 'audit' %}active{% endif %}">
       Аудит
     </a>
+    <div class="nav-dropdown">
+      <button class="nav-link nav-dropdown-btn
+        {% if request.resolver_match.namespace == 'manage' %}active{% endif %}">
+        Управление ▾
+      </button>
+      <div class="nav-dropdown-menu">
+        <a href="{% url 'manage:users' %}" class="nav-dropdown-item">Пользователи</a>
+        <a href="{% url 'manage:departments' %}" class="nav-dropdown-item">Отделы</a>
+        <a href="{% url 'manage:categories' %}" class="nav-dropdown-item">Категории файлов</a>
+      </div>
+    </div>
     {% endif %}
   </div>
   <div class="nav-user">
     <span class="user-role role-{{ user.role }}">{{ user.get_role_display }}</span>
     <span class="user-name">{{ user.full_name }}</span>
+    {% if user.department %}
+    <span class="dept-badge">{{ user.department }}</span>
+    {% endif %}
     <form method="post" action="{% url 'auth:logout' %}" style="display:inline">
       {% csrf_token %}
       <button type="submit" class="btn-logout">Выйти</button>

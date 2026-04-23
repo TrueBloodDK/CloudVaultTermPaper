@@ -1,0 +1,172 @@
+{% extends "base/layout.html" %}
+{% block title %}Категории файлов{% endblock %}
+
+{% block content %}
+<div class="page-wrap">
+
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Категории файлов</h1>
+      <p class="page-meta">Категорий в системе: <span class="mono">{{ categories|length }}</span></p>
+    </div>
+    <button class="btn btn-primary" onclick="openCreateCat()">+ Новая категория</button>
+  </div>
+
+  {% if categories %}
+  <div class="file-table-wrap">
+    <table class="file-table">
+      <thead>
+        <tr>
+          <th>Название</th>
+          <th>Описание</th>
+          <th>Доступна отделам</th>
+          <th>Файлов</th>
+          <th>Действия</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for cat in categories %}
+        <tr class="file-row">
+          <td style="font-weight:500">{{ cat.name }}</td>
+          <td class="text-muted">{{ cat.description|default:"—"|truncatechars:50 }}</td>
+          <td>
+            {% for dept in cat.departments.all %}
+            <span class="category-badge">{{ dept.name }}</span>
+            {% empty %}
+            <span class="text-muted">—</span>
+            {% endfor %}
+          </td>
+          <td class="mono">{{ cat.active_files_count }}</td>
+          <td class="file-actions">
+            <button class="btn btn-sm btn-ghost"
+                    onclick="openEditCat(
+                      '{{ cat.id }}',
+                      '{{ cat.name }}',
+                      '{{ cat.description|escapejs }}',
+                      [{% for d in cat.departments.all %}'{{ d.id }}'{% if not forloop.last %},{% endif %}{% endfor %}]
+                    )">
+              Изменить
+            </button>
+            <form method="post" action="{% url 'manage:cat-delete' cat.id %}"
+                  style="display:inline"
+                  onsubmit="return confirm('Удалить категорию «{{ cat.name }}»?')">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-danger">✕</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-icon">⬡</div>
+    <p class="empty-text">Категорий пока нет</p>
+    <p class="empty-sub">Создайте первую категорию нажав кнопку выше</p>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- Модал создания -->
+<div class="modal-backdrop" id="create-cat-modal" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title">Новая категория</h2>
+      <button class="modal-close" onclick="closeModals()">×</button>
+    </div>
+    <form method="post" action="{% url 'manage:cat-create' %}" class="modal-form">
+      {% csrf_token %}
+      <div class="form-group">
+        <label class="form-label">Название</label>
+        <input class="form-input" type="text" name="name"
+               placeholder="Например: Кадровые документы" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Описание (необязательно)</label>
+        <input class="form-input" type="text" name="description"
+               placeholder="Краткое описание категории">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Доступна отделам</label>
+        <div class="dept-checkboxes">
+          {% for dept in departments %}
+          <label class="checkbox-label">
+            <input type="checkbox" name="departments" value="{{ dept.id }}">
+            <span>{{ dept.name }}</span>
+          </label>
+          {% empty %}
+          <p class="text-muted" style="font-size:0.85rem">
+            Сначала создайте отделы в разделе
+            <a href="{% url 'manage:departments' %}">Отделы</a>
+          </p>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModals()">Отмена</button>
+        <button type="submit" class="btn btn-primary">Создать</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Модал редактирования -->
+<div class="modal-backdrop" id="edit-cat-modal" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title">Редактировать категорию</h2>
+      <button class="modal-close" onclick="closeModals()">×</button>
+    </div>
+    <form method="post" id="edit-cat-form" class="modal-form">
+      {% csrf_token %}
+      <div class="form-group">
+        <label class="form-label">Название</label>
+        <input class="form-input" type="text" name="name" id="edit-cat-name" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Описание</label>
+        <input class="form-input" type="text" name="description" id="edit-cat-desc">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Доступна отделам</label>
+        <div class="dept-checkboxes" id="edit-dept-checkboxes">
+          {% for dept in departments %}
+          <label class="checkbox-label">
+            <input type="checkbox" name="departments"
+                   value="{{ dept.id }}" class="dept-check" data-id="{{ dept.id }}">
+            <span>{{ dept.name }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModals()">Отмена</button>
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function openCreateCat() {
+  document.getElementById('create-cat-modal').style.display = 'flex';
+}
+function openEditCat(id, name, desc, deptIds) {
+  document.getElementById('edit-cat-modal').style.display = 'flex';
+  document.getElementById('edit-cat-name').value = name;
+  document.getElementById('edit-cat-desc').value = desc;
+  document.getElementById('edit-cat-form').action = '/manage/categories/' + id + '/';
+  document.querySelectorAll('.dept-check').forEach(function(cb) {
+    cb.checked = deptIds.includes(cb.dataset.id);
+  });
+}
+function closeModals() {
+  document.querySelectorAll('.modal-backdrop').forEach(m => m.style.display = 'none');
+}
+document.addEventListener('click', function(e) {
+  if (e.target.classList.contains('modal-backdrop')) e.target.style.display = 'none';
+});
+</script>
+{% endblock %}

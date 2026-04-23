@@ -1,0 +1,127 @@
+{% extends "base/layout.html" %}
+{% block title %}Пользователи{% endblock %}
+
+{% block content %}
+<div class="page-wrap">
+
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Управление пользователями</h1>
+      <p class="page-meta">Всего пользователей: <span class="mono">{{ users|length }}</span></p>
+    </div>
+  </div>
+
+  <div class="file-table-wrap">
+    <table class="file-table">
+      <thead>
+        <tr>
+          <th>Пользователь</th>
+          <th>Роль</th>
+          <th>Отдел</th>
+          <th>Статус</th>
+          <th>Дата регистрации</th>
+          <th>Действия</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr class="file-row">
+          <td>
+            <div style="font-weight:500">{{ u.full_name }}</div>
+            <div class="mono text-muted" style="font-size:0.78rem">{{ u.email }}</div>
+          </td>
+          <td>
+            <span class="user-role role-{{ u.role }}">{{ u.get_role_display }}</span>
+          </td>
+          <td class="text-muted">{{ u.department|default:"—" }}</td>
+          <td>
+            {% if u.is_active %}
+            <span style="color:var(--green);font-size:0.82rem">● Активен</span>
+            {% else %}
+            <span style="color:var(--red);font-size:0.82rem">● Заблокирован</span>
+            {% endif %}
+          </td>
+          <td class="mono text-muted">{{ u.date_joined|date:"d.m.Y" }}</td>
+          <td>
+            <button class="btn btn-sm btn-ghost"
+                    onclick="openEditUser(
+                      '{{ u.id }}',
+                      '{{ u.full_name }}',
+                      '{{ u.role }}',
+                      '{{ u.department_id|default:'' }}',
+                      {{ u.is_active|yesno:'true,false' }}
+                    )">
+              Изменить
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<!-- Модал редактирования пользователя -->
+<div class="modal-backdrop" id="edit-user-modal" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title">Редактирование пользователя</h2>
+      <button class="modal-close" onclick="closeEditUser()">×</button>
+    </div>
+    <p class="modal-file-name" id="edit-user-name"></p>
+    <form method="post" id="edit-user-form" class="modal-form">
+      {% csrf_token %}
+      <div class="form-group">
+        <label class="form-label">Роль</label>
+        <select class="form-input form-select" name="role">
+          <option value="user">Пользователь</option>
+          <option value="manager">Менеджер</option>
+          <option value="admin">Администратор</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Отдел</label>
+        <select class="form-input form-select" name="department">
+          <option value="">— Без отдела —</option>
+          {% for dept in departments %}
+          <option value="{{ dept.id }}">{{ dept.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label" style="display:flex;align-items:center;gap:10px;cursor:pointer">
+          <input type="checkbox" name="is_active" id="is-active-check" value="1">
+          <span>Пользователь активен</span>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeEditUser()">Отмена</button>
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function openEditUser(id, name, role, deptId, isActive) {
+  document.getElementById('edit-user-modal').style.display = 'flex';
+  document.getElementById('edit-user-name').textContent = name;
+  document.getElementById('edit-user-form').action = '/manage/users/' + id + '/';
+
+  const roleSelect = document.querySelector('[name="role"]');
+  const deptSelect = document.querySelector('[name="department"]');
+  const activeCheck = document.getElementById('is-active-check');
+
+  roleSelect.value = role;
+  deptSelect.value = deptId || '';
+  activeCheck.checked = isActive;
+}
+function closeEditUser() {
+  document.getElementById('edit-user-modal').style.display = 'none';
+}
+document.addEventListener('click', function(e) {
+  if (e.target.classList.contains('modal-backdrop')) e.target.style.display = 'none';
+});
+</script>
+{% endblock %}

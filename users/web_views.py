@@ -70,7 +70,6 @@ class RegisterView(View):
         data = {
             "email": request.POST.get("email", "").strip().lower(),
             "full_name": request.POST.get("full_name", "").strip(),
-            "department": request.POST.get("department", "").strip(),
             "password": request.POST.get("password", ""),
             "password_confirm": request.POST.get("password_confirm", ""),
         }

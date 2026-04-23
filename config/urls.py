@@ -10,16 +10,16 @@ urlpatterns = [
     path("admin/", admin.site.urls),
 
     # Веб-интерфейс
-    path("auth/",  include("users.web_urls")),
-    path("files/", include("files.web_urls")),
-    path("audit/", include("audit.web_urls")),
+    path("auth/",    include("users.web_urls")),
+    path("files/",   include("files.web_urls")),
+    path("audit/",   include("audit.web_urls")),
+    path("manage/",  include("manage.urls")),
 
-    # API v1 (для будущего / мобильного клиента)
+    # API v1
     path("api/v1/auth/",  include("users.urls")),
     path("api/v1/files/", include("files.urls")),
     path("api/v1/audit/", include("audit.urls")),
 
-    # Редирект с корня на список файлов
     path("", lambda req: redirect("files:list")),
 ]
 

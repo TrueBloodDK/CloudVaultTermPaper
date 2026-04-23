@@ -1,0 +1,130 @@
+{% extends "base/layout.html" %}
+{% block title %}Отделы{% endblock %}
+
+{% block content %}
+<div class="page-wrap">
+
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Отделы</h1>
+      <p class="page-meta">Отделов в системе: <span class="mono">{{ departments|length }}</span></p>
+    </div>
+    <button class="btn btn-primary" onclick="openCreateDept()">+ Новый отдел</button>
+  </div>
+
+  {% if departments %}
+  <div class="file-table-wrap">
+    <table class="file-table">
+      <thead>
+        <tr>
+          <th>Название</th>
+          <th>Описание</th>
+          <th>Сотрудников</th>
+          <th>Категорий файлов</th>
+          <th>Действия</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for dept in departments %}
+        <tr class="file-row">
+          <td style="font-weight:500">{{ dept.name }}</td>
+          <td class="text-muted">{{ dept.description|default:"—"|truncatechars:60 }}</td>
+          <td class="mono">{{ dept.users.count }}</td>
+          <td class="mono">{{ dept.file_categories.count }}</td>
+          <td class="file-actions">
+            <button class="btn btn-sm btn-ghost"
+                    onclick="openEditDept('{{ dept.id }}', '{{ dept.name }}', '{{ dept.description|escapejs }}')">
+              Изменить
+            </button>
+            <form method="post" action="{% url 'manage:dept-delete' dept.id %}"
+                  style="display:inline"
+                  onsubmit="return confirm('Удалить отдел «{{ dept.name }}»? Пользователи останутся, но потеряют привязку к отделу.')">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-danger">✕</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-icon">⬡</div>
+    <p class="empty-text">Отделов пока нет</p>
+    <p class="empty-sub">Создайте первый отдел нажав кнопку выше</p>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- Модал создания -->
+<div class="modal-backdrop" id="create-dept-modal" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title">Новый отдел</h2>
+      <button class="modal-close" onclick="closeModals()">×</button>
+    </div>
+    <form method="post" action="{% url 'manage:dept-create' %}" class="modal-form">
+      {% csrf_token %}
+      <div class="form-group">
+        <label class="form-label">Название</label>
+        <input class="form-input" type="text" name="name"
+               placeholder="Например: HR, Бухгалтерия, ИТ" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Описание (необязательно)</label>
+        <input class="form-input" type="text" name="description"
+               placeholder="Краткое описание отдела">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModals()">Отмена</button>
+        <button type="submit" class="btn btn-primary">Создать</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Модал редактирования -->
+<div class="modal-backdrop" id="edit-dept-modal" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title">Редактировать отдел</h2>
+      <button class="modal-close" onclick="closeModals()">×</button>
+    </div>
+    <form method="post" id="edit-dept-form" class="modal-form">
+      {% csrf_token %}
+      <div class="form-group">
+        <label class="form-label">Название</label>
+        <input class="form-input" type="text" name="name" id="edit-dept-name" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Описание</label>
+        <input class="form-input" type="text" name="description" id="edit-dept-desc">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModals()">Отмена</button>
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function openCreateDept() {
+  document.getElementById('create-dept-modal').style.display = 'flex';
+}
+function openEditDept(id, name, desc) {
+  document.getElementById('edit-dept-modal').style.display = 'flex';
+  document.getElementById('edit-dept-name').value = name;
+  document.getElementById('edit-dept-desc').value = desc;
+  document.getElementById('edit-dept-form').action = '/manage/departments/' + id + '/';
+}
+function closeModals() {
+  document.querySelectorAll('.modal-backdrop').forEach(m => m.style.display = 'none');
+}
+document.addEventListener('click', function(e) {
+  if (e.target.classList.contains('modal-backdrop')) e.target.style.display = 'none';
+});
+</script>
+{% endblock %}
