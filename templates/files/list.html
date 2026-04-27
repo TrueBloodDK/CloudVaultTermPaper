@@ -4,60 +4,99 @@
 {% block content %}
 <div class="page-wrap">
 
+  <!-- Хлебные крошки и заголовок -->
   <div class="page-header">
     <div>
-      <h1 class="page-title">Файлы</h1>
-      <p class="page-meta">
-        {% if user.is_admin %}Все файлы системы{% else %}Доступные вам файлы{% endif %}
-        · <span class="mono">{{ files|length }}</span> объект(ов)
-        {% if user.department %}
-        · отдел: <span class="dept-badge">{{ user.department }}</span>
+      <nav class="breadcrumbs">
+        <a href="{% url 'files:list' %}" class="crumb">⬡ Все файлы</a>
+        {% for crumb in breadcrumbs %}
+        <span class="crumb-sep">›</span>
+        {% if not forloop.last %}
+        <a href="{% url 'files:list' %}?folder={{ crumb.id }}" class="crumb">{{ crumb.name }}</a>
+        {% else %}
+        <span class="crumb crumb-current">{{ crumb.name }}</span>
         {% endif %}
+        {% endfor %}
+      </nav>
+      <h1 class="page-title">
+        {% if current_folder %}{{ current_folder.name }}{% else %}Все файлы{% endif %}
+      </h1>
+      <p class="page-meta">
+        {{ subfolders|length }} папок · {{ files|length }} файлов
+        {% if user.department %}· <span class="dept-badge">{{ user.department }}</span>{% endif %}
       </p>
     </div>
-    <button class="btn btn-primary" onclick="openUploadModal()">
-      + Загрузить файл
-    </button>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost" onclick="openFolderModal()">+ Папка</button>
+      <button class="btn btn-primary" onclick="openUploadModal()">+ Файл</button>
+    </div>
   </div>
 
-  {% if files %}
+  {% if subfolders or files %}
   <div class="file-table-wrap">
     <table class="file-table">
       <thead>
         <tr>
-          <th>Имя файла</th>
-          <th>Категория</th>
+          <th>Название</th>
+          <th>Тип</th>
           <th>Размер</th>
           <th>Владелец</th>
-          <th>Загружен</th>
+          <th>Изменён</th>
           <th>Действия</th>
         </tr>
       </thead>
       <tbody>
+
+        <!-- Папки -->
+        {% for folder in subfolders %}
+        <tr class="file-row folder-row">
+          <td class="file-name">
+            <span class="folder-icon">📁</span>
+            <a href="{% url 'files:list' %}?folder={{ folder.id }}"
+               class="folder-link">{{ folder.name }}</a>
+          </td>
+          <td class="text-muted" style="font-size:0.82rem">Папка</td>
+          <td class="text-muted">—</td>
+          <td class="text-muted">{{ folder.owner.email }}</td>
+          <td class="mono text-muted">{{ folder.updated_at|date:"d.m.Y H:i" }}</td>
+          <td class="file-actions">
+            {% if user.is_admin or folder.owner == user %}
+            <button class="btn btn-sm btn-ghost"
+                    onclick="openRenameModal('{{ folder.id }}', '{{ folder.name }}')">
+              ✎
+            </button>
+            <form method="post" action="{% url 'files:folder-delete' folder.id %}"
+                  style="display:inline"
+                  onsubmit="return confirm('Удалить папку «{{ folder.name }}» и всё её содержимое?')">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-danger">✕</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+
+        <!-- Файлы -->
         {% for file in files %}
         <tr class="file-row">
           <td class="file-name">
             <span class="file-icon">{{ file.mime_type|slice:":5" }}</span>
             <span>{{ file.original_name }}</span>
-          </td>
-          <td>
             {% if file.category %}
-            <span class="category-badge">{{ file.category.name }}</span>
-            {% else %}
-            <span class="text-muted">—</span>
+            <span class="category-badge" style="margin-left:6px">{{ file.category.name }}</span>
             {% endif %}
           </td>
+          <td class="mono text-muted" style="font-size:0.78rem">{{ file.mime_type }}</td>
           <td class="mono">{{ file.size_kb }} КБ</td>
           <td class="text-muted">{{ file.owner.email }}</td>
           <td class="mono text-muted">{{ file.created_at|date:"d.m.Y H:i" }}</td>
           <td class="file-actions">
             <a href="{% url 'files:download' file.id %}"
-               class="btn btn-sm btn-ghost">↓ Скачать</a>
+               class="btn btn-sm btn-ghost" title="Скачать">↓</a>
             {% if user.is_admin or file.owner == user %}
             <button class="btn btn-sm btn-ghost"
-                    onclick="openShareModal('{{ file.id }}', '{{ file.original_name }}')">
-              ⇄ Доступ
-            </button>
+                    onclick="openShareModal('{{ file.id }}', '{{ file.original_name }}')"
+                    title="Доступ">⇄</button>
             <form method="post" action="{% url 'files:delete' file.id %}"
                   style="display:inline"
                   onsubmit="return confirm('Удалить «{{ file.original_name }}»?')">
@@ -68,32 +107,78 @@
           </td>
         </tr>
         {% endfor %}
+
       </tbody>
     </table>
   </div>
   {% else %}
   <div class="empty-state">
-    <div class="empty-icon">⬡</div>
-    <p class="empty-text">Файлов пока нет</p>
-    <p class="empty-sub">Загрузите первый файл или обратитесь к администратору</p>
+    <div class="empty-icon">📁</div>
+    <p class="empty-text">Здесь пусто</p>
+    <p class="empty-sub">Создайте папку или загрузите файл</p>
   </div>
   {% endif %}
 
 </div>
 
-<!-- Модальное окно загрузки -->
+<!-- Модал: создать папку -->
+<div class="modal-backdrop" id="folder-modal" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title">Новая папка</h2>
+      <button class="modal-close" onclick="closeModals()">×</button>
+    </div>
+    <form method="post" action="{% url 'files:folder-create' %}" class="modal-form">
+      {% csrf_token %}
+      <input type="hidden" name="parent" value="{{ current_folder.id|default:'' }}">
+      <div class="form-group">
+        <label class="form-label">Название папки</label>
+        <input class="form-input" type="text" name="name"
+               placeholder="Например: Отчёты 2024" required autofocus>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModals()">Отмена</button>
+        <button type="submit" class="btn btn-primary">Создать</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Модал: переименовать папку -->
+<div class="modal-backdrop" id="rename-modal" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title">Переименовать папку</h2>
+      <button class="modal-close" onclick="closeModals()">×</button>
+    </div>
+    <form method="post" id="rename-form" class="modal-form">
+      {% csrf_token %}
+      <div class="form-group">
+        <label class="form-label">Новое название</label>
+        <input class="form-input" type="text" name="name" id="rename-input" required>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModals()">Отмена</button>
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Модал: загрузить файл -->
 <div class="modal-backdrop" id="upload-modal" style="display:none">
   <div class="modal">
     <div class="modal-header">
       <h2 class="modal-title">Загрузка файла</h2>
-      <button class="modal-close" onclick="closeUploadModal()">×</button>
+      <button class="modal-close" onclick="closeModals()">×</button>
     </div>
     <form method="post" action="{% url 'files:upload' %}"
           enctype="multipart/form-data" class="modal-form">
       {% csrf_token %}
+      <input type="hidden" name="folder" value="{{ current_folder.id|default:'' }}">
       <div class="drop-zone" id="drop-zone">
         <div class="drop-icon">↑</div>
-        <p class="drop-text">Перетащите файл сюда или нажмите для выбора</p>
+        <p class="drop-text">Перетащите файл или нажмите для выбора</p>
         <p class="drop-sub">Макс. 50 МБ · PDF, DOCX, XLSX, JPG, PNG, ZIP</p>
         <input type="file" name="file" id="file-input" class="drop-input" required>
       </div>
@@ -112,23 +197,22 @@
       </div>
       <div class="form-group">
         <label class="form-label">Описание (необязательно)</label>
-        <input class="form-input" type="text" name="description"
-               placeholder="Краткое описание файла">
+        <input class="form-input" type="text" name="description" placeholder="Краткое описание">
       </div>
       <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" onclick="closeUploadModal()">Отмена</button>
+        <button type="button" class="btn btn-ghost" onclick="closeModals()">Отмена</button>
         <button type="submit" class="btn btn-primary">Зашифровать и загрузить</button>
       </div>
     </form>
   </div>
 </div>
 
-<!-- Модальное окно доступа -->
+<!-- Модал: доступ к файлу -->
 <div class="modal-backdrop" id="share-modal" style="display:none">
   <div class="modal">
     <div class="modal-header">
       <h2 class="modal-title">Управление доступом</h2>
-      <button class="modal-close" onclick="closeShareModal()">×</button>
+      <button class="modal-close" onclick="closeModals()">×</button>
     </div>
     <p class="modal-file-name" id="share-file-name"></p>
     <form method="post" id="share-form" class="modal-form">
@@ -146,10 +230,34 @@
         </select>
       </div>
       <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" onclick="closeShareModal()">Отмена</button>
+        <button type="button" class="btn btn-ghost" onclick="closeModals()">Отмена</button>
         <button type="submit" class="btn btn-primary">Предоставить доступ</button>
       </div>
     </form>
   </div>
 </div>
+
+<script>
+function openFolderModal() { document.getElementById('folder-modal').style.display = 'flex'; }
+function openUploadModal() { document.getElementById('upload-modal').style.display = 'flex'; }
+function closeModals() {
+  document.querySelectorAll('.modal-backdrop').forEach(m => m.style.display = 'none');
+}
+function openRenameModal(id, name) {
+  document.getElementById('rename-modal').style.display = 'flex';
+  document.getElementById('rename-input').value = name;
+  document.getElementById('rename-form').action = '/files/folders/' + id + '/rename/';
+}
+function openShareModal(fileId, fileName) {
+  document.getElementById('share-modal').style.display = 'flex';
+  document.getElementById('share-file-name').textContent = fileName;
+  document.getElementById('share-form').action = '/files/' + fileId + '/share/';
+}
+document.addEventListener('click', function(e) {
+  if (e.target.classList.contains('modal-backdrop')) e.target.style.display = 'none';
+});
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeModals();
+});
+</script>
 {% endblock %}

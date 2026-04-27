@@ -584,3 +584,45 @@ body {
   cursor: pointer;
   flex-shrink: 0;
 }
+
+/* ── Хлебные крошки ── */
+
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.crumb {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color 0.1s;
+}
+.crumb:hover { color: var(--accent); }
+.crumb-current {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+.crumb-sep {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+/* ── Папки ── */
+
+.folder-row { background: rgba(79, 158, 255, 0.03); }
+.folder-row:hover { background: rgba(79, 158, 255, 0.07); }
+
+.folder-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.folder-link {
+  color: var(--text-primary);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.1s;
+}
+.folder-link:hover { color: var(--accent); }
