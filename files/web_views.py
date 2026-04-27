@@ -5,26 +5,23 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import FileResponse
-from django.db.models import Q
 from django.views import View
 from django.core.files.base import ContentFile
 
 from files.models import File, FilePermission, FileCategory, Folder
 from files.encryption import encrypt_file, decrypt_file, compute_checksum
 from files.serializers import FileUploadSerializer
-from files.access import can_access_file, get_accessible_files
+from files.access import (
+    can_access_file, can_delete_file, can_share_file,
+    can_upload_to_folder, can_manage_folder,
+    get_accessible_files, get_accessible_folders,
+)
 from users.models import User
 from audit.models import AuditLog
 from audit.utils import log_action
 
 
 class FileListView(LoginRequiredMixin, View):
-    """
-    Главная страница — содержимое текущей папки.
-
-    GET /files/                     — корень (папки и файлы без папки)
-    GET /files/?folder=<uuid>       — содержимое конкретной папки
-    """
     login_url = "/auth/login/"
     template_name = "files/list.html"
 
@@ -35,35 +32,17 @@ class FileListView(LoginRequiredMixin, View):
         breadcrumbs = []
 
         if folder_id:
-            current_folder = get_object_or_404(
-                Folder, pk=folder_id
-            )
+            current_folder = get_object_or_404(Folder, pk=folder_id)
             # Проверяем доступ к папке
-            if not _can_access_folder(user, current_folder):
+            accessible = get_accessible_folders(user, parent=current_folder.parent)
+            if not user.is_admin and not accessible.filter(pk=current_folder.pk).exists():
                 messages.error(request, "Нет доступа к этой папке")
                 return redirect("files:list")
             breadcrumbs = current_folder.get_breadcrumbs()
 
-        # Подпапки текущего уровня
-        if user.is_admin:
-            subfolders = Folder.objects.filter(parent=current_folder)
-        else:
-            subfolders = Folder.objects.filter(
-                parent=current_folder,
-            ).filter(
-                Q(owner=user) |
-                Q(department__in=user.department_id and [user.department_id] or [])
-            )
-
-        # Файлы текущего уровня
-        accessible = get_accessible_files(user)
-        files = accessible.filter(folder=current_folder)
-
+        subfolders = get_accessible_folders(user, parent=current_folder)
+        files = get_accessible_files(user).filter(folder=current_folder)
         categories = FileCategory.objects.all()
-        # Папки для выбора при создании вложенной папки
-        user_folders = Folder.objects.filter(
-            Q(owner=user) | (Q(department=user.department) if user.department else Q())
-        )
 
         return render(request, self.template_name, {
             "files": files,
@@ -71,110 +50,109 @@ class FileListView(LoginRequiredMixin, View):
             "current_folder": current_folder,
             "breadcrumbs": breadcrumbs,
             "categories": categories,
-            "user_folders": user_folders,
+            # Флаги для шаблона
+            "can_upload": _can_upload_here(user, current_folder),
+            "can_create_folder": _can_upload_here(user, current_folder),
         })
 
 
-def _can_access_folder(user, folder):
-    """Проверяет доступ пользователя к папке."""
+def _can_upload_here(user, folder):
+    """Может ли пользователь добавлять что-то в текущую папку/корень."""
     if user.is_admin:
         return True
-    if folder.owner == user:
-        return True
-    if folder.department and user.department == folder.department:
-        return True
-    return False
+    if folder is None:
+        return True  # корень — каждый может создавать свои папки
+    return can_upload_to_folder(user, folder)
 
 
 # ── Папки ────────────────────────────────────────────────────────────────────
 
 class FolderCreateView(LoginRequiredMixin, View):
-    """POST /files/folders/create/ — создать папку."""
     login_url = "/auth/login/"
 
     def post(self, request):
         name = request.POST.get("name", "").strip()
         parent_id = request.POST.get("parent") or None
+        parent = None
+
+        if parent_id:
+            parent = get_object_or_404(Folder, pk=parent_id)
+            if not can_upload_to_folder(request.user, parent):
+                messages.error(request, "Нет прав для создания папки здесь")
+                return _back(parent_id)
 
         if not name:
             messages.error(request, "Название папки обязательно")
-            return _redirect_to_folder(parent_id)
+            return _back(parent_id)
 
-        parent = None
-        if parent_id:
-            parent = get_object_or_404(Folder, pk=parent_id)
-            if not _can_access_folder(request.user, parent):
-                messages.error(request, "Нет доступа к родительской папке")
-                return redirect("files:list")
-
-        # Проверяем уникальность имени в данной папке
-        if Folder.objects.filter(
-            name=name, parent=parent, owner=request.user
-        ).exists():
+        if Folder.objects.filter(name=name, parent=parent, owner=request.user).exists():
             messages.error(request, f"Папка «{name}» уже существует здесь")
-            return _redirect_to_folder(parent_id)
+            return _back(parent_id)
 
         Folder.objects.create(
             name=name,
             owner=request.user,
             parent=parent,
-            department=request.user.department,
+            department=parent.department if parent else request.user.department,
         )
         messages.success(request, f"Папка «{name}» создана")
-        return _redirect_to_folder(parent_id)
+        return _back(parent_id)
 
 
 class FolderDeleteView(LoginRequiredMixin, View):
-    """POST /files/folders/<uuid>/delete/ — удалить папку (каскадно)."""
     login_url = "/auth/login/"
 
     def post(self, request, pk):
         folder = get_object_or_404(Folder, pk=pk)
 
-        if not request.user.is_admin and folder.owner != request.user:
+        if not can_manage_folder(request.user, folder):
             messages.error(request, "Нет прав для удаления этой папки")
-            return _redirect_to_folder(str(folder.parent_id) if folder.parent else None)
+            return _back(str(folder.parent_id) if folder.parent else None)
 
         parent_id = str(folder.parent_id) if folder.parent else None
         name = folder.name
-
-        # Мягкое удаление всех файлов внутри (рекурсивно)
         _soft_delete_folder_contents(folder)
         folder.delete()
-
-        messages.success(request, f"Папка «{name}» и всё её содержимое удалены")
-        return _redirect_to_folder(parent_id)
+        messages.success(request, f"Папка «{name}» удалена")
+        return _back(parent_id)
 
 
 class FolderRenameView(LoginRequiredMixin, View):
-    """POST /files/folders/<uuid>/rename/ — переименовать папку."""
     login_url = "/auth/login/"
 
     def post(self, request, pk):
         folder = get_object_or_404(Folder, pk=pk)
 
-        if not request.user.is_admin and folder.owner != request.user:
+        if not can_manage_folder(request.user, folder):
             messages.error(request, "Нет прав для переименования")
-            return _redirect_to_folder(str(folder.parent_id) if folder.parent else None)
+            return _back(str(folder.parent_id) if folder.parent else None)
 
         new_name = request.POST.get("name", "").strip()
         if not new_name:
             messages.error(request, "Название не может быть пустым")
-            return _redirect_to_folder(str(folder.parent_id) if folder.parent else None)
+            return _back(str(folder.parent_id) if folder.parent else None)
 
         folder.name = new_name
         folder.save(update_fields=["name", "updated_at"])
         messages.success(request, f"Папка переименована в «{new_name}»")
-        return _redirect_to_folder(str(folder.parent_id) if folder.parent else None)
+        return _back(str(folder.parent_id) if folder.parent else None)
 
 
 # ── Файлы ────────────────────────────────────────────────────────────────────
 
 class FileUploadView(LoginRequiredMixin, View):
-    """POST /files/upload/ — загрузить и зашифровать файл."""
     login_url = "/auth/login/"
 
     def post(self, request):
+        folder_id = request.POST.get("folder") or None
+        folder = None
+
+        if folder_id:
+            folder = get_object_or_404(Folder, pk=folder_id)
+            if not can_upload_to_folder(request.user, folder):
+                messages.error(request, "Нет прав для загрузки в эту папку")
+                return _back(folder_id)
+
         data = request.POST.copy()
         data["file"] = request.FILES.get("file")
         serializer = FileUploadSerializer(data=data)
@@ -183,16 +161,10 @@ class FileUploadView(LoginRequiredMixin, View):
             for field, errors in serializer.errors.items():
                 for error in errors:
                     messages.error(request, str(error))
-            folder_id = request.POST.get("folder") or None
-            return _redirect_to_folder(folder_id)
+            return _back(folder_id)
 
         uploaded = request.FILES["file"]
         raw_data = uploaded.read()
-
-        folder_id = request.POST.get("folder") or None
-        folder = None
-        if folder_id:
-            folder = get_object_or_404(Folder, pk=folder_id)
 
         category_id = request.POST.get("category") or None
         category = None
@@ -217,11 +189,10 @@ class FileUploadView(LoginRequiredMixin, View):
         log_action(request, AuditLog.Action.FILE_UPLOAD, obj=file_obj,
                    extra={"size": file_obj.size})
         messages.success(request, f"Файл «{file_obj.original_name}» загружен")
-        return _redirect_to_folder(folder_id)
+        return _back(folder_id)
 
 
 class FileDownloadView(LoginRequiredMixin, View):
-    """GET /files/<uuid>/download/ — скачать файл с расшифровкой."""
     login_url = "/auth/login/"
 
     def get(self, request, pk):
@@ -245,15 +216,14 @@ class FileDownloadView(LoginRequiredMixin, View):
 
 
 class FileDeleteView(LoginRequiredMixin, View):
-    """POST /files/<uuid>/delete/ — мягкое удаление файла."""
     login_url = "/auth/login/"
 
     def post(self, request, pk):
         file_obj = get_object_or_404(File, pk=pk, status=File.Status.ACTIVE)
 
-        if not request.user.is_admin and file_obj.owner != request.user:
+        if not can_delete_file(request.user, file_obj):
             log_action(request, AuditLog.Action.ACCESS_DENIED, obj=file_obj)
-            messages.error(request, "Нет прав для удаления")
+            messages.error(request, "Нет прав для удаления этого файла")
             return redirect("files:list")
 
         folder_id = str(file_obj.folder_id) if file_obj.folder else None
@@ -263,18 +233,17 @@ class FileDeleteView(LoginRequiredMixin, View):
 
         log_action(request, AuditLog.Action.FILE_DELETE, obj=file_obj)
         messages.success(request, f"Файл «{name}» удалён")
-        return _redirect_to_folder(folder_id)
+        return _back(folder_id)
 
 
 class FileShareView(LoginRequiredMixin, View):
-    """POST /files/<uuid>/share/ — предоставить доступ к файлу."""
     login_url = "/auth/login/"
 
     def post(self, request, pk):
         file_obj = get_object_or_404(File, pk=pk, status=File.Status.ACTIVE)
 
-        if not request.user.is_admin and file_obj.owner != request.user:
-            messages.error(request, "Только владелец может управлять доступом")
+        if not can_share_file(request.user, file_obj):
+            messages.error(request, "Только руководитель отдела или администратор может расшаривать файлы")
             return redirect("files:list")
 
         target_email = request.POST.get("user_email", "").strip().lower()
@@ -300,18 +269,13 @@ class FileShareView(LoginRequiredMixin, View):
 
 # ── Вспомогательные функции ───────────────────────────────────────────────────
 
-def _redirect_to_folder(folder_id):
-    """Редирект обратно в папку после действия."""
+def _back(folder_id):
     if folder_id:
         return redirect(f"/files/?folder={folder_id}")
     return redirect("files:list")
 
 
 def _soft_delete_folder_contents(folder):
-    """
-    Рекурсивно помечает все файлы внутри папки как удалённые.
-    Вложенные папки удаляются каскадно через БД (on_delete=CASCADE).
-    """
     File.objects.filter(folder=folder, status=File.Status.ACTIVE).update(
         status=File.Status.DELETED
     )

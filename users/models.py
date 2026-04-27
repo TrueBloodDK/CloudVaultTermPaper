@@ -106,3 +106,61 @@ class User(AbstractBaseUser, PermissionsMixin):
     @property
     def is_manager(self):
         return self.role in (self.Role.ADMIN, self.Role.MANAGER)
+
+
+class DepartmentMembership(models.Model):
+    """
+    Роль пользователя внутри конкретного отдела.
+
+    Отличается от глобальной роли User.role:
+      - User.role = admin/manager/user — глобальная роль в системе
+      - DepartmentMembership.role = head/member — роль в конкретном отделе
+
+    Один пользователь может быть руководителем HR
+    и рядовым сотрудником в проектной группе одновременно.
+    """
+
+    class Role(models.TextChoices):
+        HEAD   = "head",   "Руководитель отдела"
+        MEMBER = "member", "Сотрудник"
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="memberships",
+        verbose_name="Пользователь",
+    )
+    department = models.ForeignKey(
+        Department,
+        on_delete=models.CASCADE,
+        related_name="memberships",
+        verbose_name="Отдел",
+    )
+    role = models.CharField(
+        max_length=10,
+        choices=Role.choices,
+        default=Role.MEMBER,
+        verbose_name="Роль в отделе",
+    )
+    assigned_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assigned_memberships",
+        verbose_name="Назначил",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Назначен")
+
+    class Meta:
+        verbose_name = "Членство в отделе"
+        verbose_name_plural = "Членства в отделах"
+        unique_together = ["user", "department"]
+        ordering = ["department", "role"]
+
+    def __str__(self):
+        return f"{self.user} — {self.department} ({self.get_role_display()})"
+
+    @property
+    def is_head(self):
+        return self.role == self.Role.HEAD

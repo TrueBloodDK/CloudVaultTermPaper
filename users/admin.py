@@ -60,3 +60,26 @@ class UserAdmin(BaseUserAdmin):
             bg, fg, obj.get_role_display()
         )
     role_badge.short_description = "Роль"
+
+
+from .models import DepartmentMembership
+
+
+class MembershipInline(admin.TabularInline):
+    model = DepartmentMembership
+    extra = 1
+    fields = ["department", "role", "assigned_by", "created_at"]
+    readonly_fields = ["created_at"]
+    fk_name = "user"
+
+
+# Добавляем inline в UserAdmin
+UserAdmin.inlines = [MembershipInline]
+
+
+@admin.register(DepartmentMembership)
+class DepartmentMembershipAdmin(admin.ModelAdmin):
+    list_display = ["user", "department", "role", "assigned_by", "created_at"]
+    list_filter = ["role", "department"]
+    search_fields = ["user__email", "user__full_name", "department__name"]
+    list_select_related = ["user", "department", "assigned_by"]
