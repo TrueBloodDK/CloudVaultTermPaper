@@ -3,6 +3,7 @@ from .views import (
     UserListView, UserUpdateView,
     MembershipCreateView, MembershipDeleteView,
     DepartmentListView, DepartmentCreateView, DepartmentUpdateView, DepartmentDeleteView,
+    FolderListView,
 )
 
 app_name = "manage"
@@ -17,4 +18,6 @@ urlpatterns = [
     path("departments/create/",          DepartmentCreateView.as_view(), name="dept-create"),
     path("departments/<int:pk>/",        DepartmentUpdateView.as_view(), name="dept-update"),
     path("departments/<int:pk>/delete/", DepartmentDeleteView.as_view(), name="dept-delete"),
+
+    path("folders/",                     FolderListView.as_view(),       name="folders"),
 ]

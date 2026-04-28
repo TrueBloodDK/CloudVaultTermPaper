@@ -150,3 +150,36 @@ class DepartmentDeleteView(AdminRequiredMixin, View):
         dept.delete()
         messages.success(request, f"Отдел «{name}» удалён")
         return redirect("manage:departments")
+
+
+# ── Папки ─────────────────────────────────────────────────────────────────────
+
+class FolderListView(AdminRequiredMixin, View):
+    """GET /manage/folders/ — все папки системы с фильтрацией."""
+
+    def get(self, request):
+        from files.models import Folder
+        from django.db.models import Q
+
+        qs = Folder.objects.select_related(
+            "owner", "department", "parent"
+        ).prefetch_related("files").order_by("name")
+
+        # Поиск
+        q = request.GET.get("q", "").strip()
+        if q:
+            qs = qs.filter(
+                Q(name__icontains=q) | Q(owner__email__icontains=q)
+            )
+
+        # Фильтр по отделу
+        dept = request.GET.get("dept", "").strip()
+        if dept == "none":
+            qs = qs.filter(department__isnull=True)
+        elif dept:
+            qs = qs.filter(department_id=dept)
+
+        return render(request, "manage/folders.html", {
+            "folders": qs,
+            "departments": Department.objects.all(),
+        })

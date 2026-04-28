@@ -65,6 +65,14 @@
                     onclick="openRenameModal('{{ folder.id }}', '{{ folder.name }}')">
               ✎
             </button>
+            {% endif %}
+            {% if user.is_admin %}
+            <button class="btn btn-sm btn-ghost"
+                    onclick="openDeptModal('{{ folder.id }}', '{{ folder.name }}', '{{ folder.department_id|default:'' }}')">
+              ⊙ Отдел
+            </button>
+            {% endif %}
+            {% if user.is_admin or folder.owner == user %}
             <form method="post" action="{% url 'files:folder-delete' folder.id %}"
                   style="display:inline"
                   onsubmit="return confirm('Удалить папку «{{ folder.name }}» и всё её содержимое?')">
@@ -247,5 +255,44 @@ document.addEventListener('click', function(e) {
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') closeModals();
 });
+function openDeptModal(id, name, currentDeptId) {
+  document.getElementById('dept-modal').style.display = 'flex';
+  document.getElementById('dept-folder-name').textContent = name;
+  document.getElementById('dept-form').action = '/files/folders/' + id + '/dept/';
+  document.getElementById('dept-select').value = currentDeptId || '';
+}
 </script>
+
+<!-- Модал: сменить отдел папки (только admin) -->
+{% if user.is_admin %}
+<div class="modal-backdrop" id="dept-modal" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title">Отдел папки</h2>
+      <button class="modal-close" onclick="closeModals()">×</button>
+    </div>
+    <p class="modal-file-name" id="dept-folder-name"></p>
+    <form method="post" id="dept-form" class="modal-form">
+      {% csrf_token %}
+      <div class="form-group">
+        <label class="form-label">Отдел</label>
+        <select class="form-input form-select" name="department" id="dept-select">
+          <option value="">— Без отдела (личная папка) —</option>
+          {% for dept in departments %}
+          <option value="{{ dept.id }}">{{ dept.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <p class="form-hint">
+        Все сотрудники выбранного отдела получат доступ к этой папке.
+      </p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModals()">Отмена</button>
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
 {% endblock %}

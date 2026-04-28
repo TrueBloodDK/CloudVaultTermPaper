@@ -653,3 +653,10 @@ body {
   transition: color 0.1s;
 }
 .btn-inline-del:hover { color: var(--red); }
+
+/* ── Подсказка под полем формы ── */
+.form-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: -8px;
+}

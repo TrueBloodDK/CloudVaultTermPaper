@@ -2,7 +2,7 @@ from django.urls import path
 from .web_views import (
     FileListView, FileUploadView, FileDownloadView,
     FileDeleteView, FileShareView,
-    FolderCreateView, FolderDeleteView, FolderRenameView,
+    FolderCreateView, FolderDeleteView, FolderRenameView, FolderChangeDeptView,
 )
 
 app_name = "files"
@@ -16,7 +16,8 @@ urlpatterns = [
     path("<uuid:pk>/share/",    FileShareView.as_view(),    name="share"),
 
     # Папки
-    path("folders/create/",              FolderCreateView.as_view(), name="folder-create"),
-    path("folders/<uuid:pk>/delete/",    FolderDeleteView.as_view(), name="folder-delete"),
-    path("folders/<uuid:pk>/rename/",    FolderRenameView.as_view(), name="folder-rename"),
+    path("folders/create/",              FolderCreateView.as_view(),     name="folder-create"),
+    path("folders/<uuid:pk>/delete/",    FolderDeleteView.as_view(),     name="folder-delete"),
+    path("folders/<uuid:pk>/rename/",    FolderRenameView.as_view(),     name="folder-rename"),
+    path("folders/<uuid:pk>/dept/",      FolderChangeDeptView.as_view(), name="folder-dept"),
 ]

@@ -41,12 +41,14 @@ class FileListView(LoginRequiredMixin, View):
         subfolders = get_accessible_folders(request.user, parent=current_folder)
         files = get_accessible_files(request.user).filter(folder=current_folder)
 
+        from users.models import Department
         return render(request, self.template_name, {
             "files": files,
             "subfolders": subfolders,
             "current_folder": current_folder,
             "breadcrumbs": breadcrumbs,
             "can_upload": _can_upload_here(request.user, current_folder),
+            "departments": Department.objects.all() if request.user.is_admin else [],
         })
 
 
@@ -263,3 +265,33 @@ def _soft_delete_folder_contents(folder):
     )
     for child in folder.children.all():
         _soft_delete_folder_contents(child)
+
+
+class FolderChangeDeptView(LoginRequiredMixin, View):
+    """POST /files/folders/<uuid>/dept/ — сменить отдел папки (только admin)."""
+    login_url = "/auth/login/"
+
+    def post(self, request, pk):
+        if not request.user.is_admin:
+            messages.error(request, "Только администратор может менять отдел папки")
+            return redirect("files:list")
+
+        folder = get_object_or_404(Folder, pk=pk)
+        dept_id = request.POST.get("department") or None
+
+        from users.models import Department
+        dept = None
+        if dept_id:
+            dept = get_object_or_404(Department, pk=dept_id)
+
+        old_dept = str(folder.department) if folder.department else "—"
+        folder.department = dept
+        folder.save(update_fields=["department", "updated_at"])
+
+        new_dept = str(dept) if dept else "—"
+        messages.success(
+            request,
+            f"Отдел папки «{folder.name}» изменён: {old_dept} → {new_dept}"
+        )
+        parent_id = str(folder.parent_id) if folder.parent else None
+        return _back(parent_id)
