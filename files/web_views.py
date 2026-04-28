@@ -8,7 +8,7 @@ from django.http import FileResponse
 from django.views import View
 from django.core.files.base import ContentFile
 
-from files.models import File, FilePermission, FileCategory, Folder
+from files.models import File, FilePermission, Folder
 from files.encryption import encrypt_file, decrypt_file, compute_checksum
 from files.serializers import FileUploadSerializer
 from files.access import (
@@ -26,42 +26,33 @@ class FileListView(LoginRequiredMixin, View):
     template_name = "files/list.html"
 
     def get(self, request):
-        user = request.user
         folder_id = request.GET.get("folder")
         current_folder = None
         breadcrumbs = []
 
         if folder_id:
             current_folder = get_object_or_404(Folder, pk=folder_id)
-            # Проверяем доступ к папке
-            accessible = get_accessible_folders(user, parent=current_folder.parent)
-            if not user.is_admin and not accessible.filter(pk=current_folder.pk).exists():
+            accessible = get_accessible_folders(request.user, parent=current_folder.parent)
+            if not request.user.is_admin and not accessible.filter(pk=current_folder.pk).exists():
                 messages.error(request, "Нет доступа к этой папке")
                 return redirect("files:list")
             breadcrumbs = current_folder.get_breadcrumbs()
 
-        subfolders = get_accessible_folders(user, parent=current_folder)
-        files = get_accessible_files(user).filter(folder=current_folder)
-        categories = FileCategory.objects.all()
+        subfolders = get_accessible_folders(request.user, parent=current_folder)
+        files = get_accessible_files(request.user).filter(folder=current_folder)
 
         return render(request, self.template_name, {
             "files": files,
             "subfolders": subfolders,
             "current_folder": current_folder,
             "breadcrumbs": breadcrumbs,
-            "categories": categories,
-            # Флаги для шаблона
-            "can_upload": _can_upload_here(user, current_folder),
-            "can_create_folder": _can_upload_here(user, current_folder),
+            "can_upload": _can_upload_here(request.user, current_folder),
         })
 
 
 def _can_upload_here(user, folder):
-    """Может ли пользователь добавлять что-то в текущую папку/корень."""
-    if user.is_admin:
+    if user.is_admin or folder is None:
         return True
-    if folder is None:
-        return True  # корень — каждый может создавать свои папки
     return can_upload_to_folder(user, folder)
 
 
@@ -166,14 +157,6 @@ class FileUploadView(LoginRequiredMixin, View):
         uploaded = request.FILES["file"]
         raw_data = uploaded.read()
 
-        category_id = request.POST.get("category") or None
-        category = None
-        if category_id:
-            try:
-                category = FileCategory.objects.get(pk=category_id)
-            except FileCategory.DoesNotExist:
-                pass
-
         file_obj = File.objects.create(
             owner=request.user,
             original_name=uploaded.name,
@@ -183,7 +166,6 @@ class FileUploadView(LoginRequiredMixin, View):
             checksum=compute_checksum(raw_data),
             description=serializer.validated_data.get("description", ""),
             folder=folder,
-            category=category,
         )
 
         log_action(request, AuditLog.Action.FILE_UPLOAD, obj=file_obj,
@@ -267,7 +249,7 @@ class FileShareView(LoginRequiredMixin, View):
         return redirect("files:list")
 
 
-# ── Вспомогательные функции ───────────────────────────────────────────────────
+# ── Вспомогательные ───────────────────────────────────────────────────────────
 
 def _back(folder_id):
     if folder_id:

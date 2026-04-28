@@ -6,7 +6,6 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.views import View
 
 from users.models import User, Department, DepartmentMembership
-from files.models import FileCategory
 
 
 class AdminRequiredMixin(LoginRequiredMixin):
@@ -61,8 +60,6 @@ class UserUpdateView(AdminRequiredMixin, View):
 # ── Членство в отделах ────────────────────────────────────────────────────────
 
 class MembershipCreateView(AdminRequiredMixin, View):
-    """POST /manage/users/<pk>/membership/ — добавить пользователя в отдел."""
-
     def post(self, request, pk):
         user = get_object_or_404(User, pk=pk)
         dept_id = request.POST.get("department")
@@ -73,10 +70,8 @@ class MembershipCreateView(AdminRequiredMixin, View):
             return redirect("manage:users")
 
         dept = get_object_or_404(Department, pk=dept_id)
-
         membership, created = DepartmentMembership.objects.update_or_create(
-            user=user,
-            department=dept,
+            user=user, department=dept,
             defaults={"role": role, "assigned_by": request.user},
         )
 
@@ -90,8 +85,6 @@ class MembershipCreateView(AdminRequiredMixin, View):
 
 
 class MembershipDeleteView(AdminRequiredMixin, View):
-    """POST /manage/membership/<pk>/delete/ — убрать пользователя из отдела."""
-
     def post(self, request, pk):
         membership = get_object_or_404(DepartmentMembership, pk=pk)
         user_name = membership.user.full_name
@@ -106,7 +99,7 @@ class MembershipDeleteView(AdminRequiredMixin, View):
 class DepartmentListView(AdminRequiredMixin, View):
     def get(self, request):
         departments = Department.objects.prefetch_related(
-            "memberships__user", "file_categories"
+            "memberships__user"
         ).order_by("name")
         return render(request, "manage/departments.html", {
             "departments": departments,
@@ -157,72 +150,3 @@ class DepartmentDeleteView(AdminRequiredMixin, View):
         dept.delete()
         messages.success(request, f"Отдел «{name}» удалён")
         return redirect("manage:departments")
-
-
-# ── Категории файлов ──────────────────────────────────────────────────────────
-
-class CategoryListView(AdminRequiredMixin, View):
-    def get(self, request):
-        from django.db.models import Count, Q
-        categories = FileCategory.objects.prefetch_related(
-            "departments"
-        ).annotate(
-            active_files_count=Count("files", filter=Q(files__status="active"))
-        ).order_by("name")
-        departments = Department.objects.all()
-        return render(request, "manage/categories.html", {
-            "categories": categories,
-            "departments": departments,
-        })
-
-
-class CategoryCreateView(AdminRequiredMixin, View):
-    def post(self, request):
-        name = request.POST.get("name", "").strip()
-        description = request.POST.get("description", "").strip()
-        dept_ids = request.POST.getlist("departments")
-
-        if not name:
-            messages.error(request, "Название обязательно")
-            return redirect("manage:categories")
-        if FileCategory.objects.filter(name=name).exists():
-            messages.error(request, f"Категория «{name}» уже существует")
-            return redirect("manage:categories")
-
-        cat = FileCategory.objects.create(name=name, description=description)
-        if dept_ids:
-            cat.departments.set(Department.objects.filter(id__in=dept_ids))
-
-        messages.success(request, f"Категория «{name}» создана")
-        return redirect("manage:categories")
-
-
-class CategoryUpdateView(AdminRequiredMixin, View):
-    def post(self, request, pk):
-        cat = get_object_or_404(FileCategory, pk=pk)
-        name = request.POST.get("name", "").strip()
-        description = request.POST.get("description", "").strip()
-        dept_ids = request.POST.getlist("departments")
-
-        if not name:
-            messages.error(request, "Название обязательно")
-            return redirect("manage:categories")
-        if FileCategory.objects.filter(name=name).exclude(pk=pk).exists():
-            messages.error(request, f"Категория «{name}» уже существует")
-            return redirect("manage:categories")
-
-        cat.name = name
-        cat.description = description
-        cat.save(update_fields=["name", "description"])
-        cat.departments.set(Department.objects.filter(id__in=dept_ids))
-        messages.success(request, f"Категория «{name}» обновлена")
-        return redirect("manage:categories")
-
-
-class CategoryDeleteView(AdminRequiredMixin, View):
-    def post(self, request, pk):
-        cat = get_object_or_404(FileCategory, pk=pk)
-        name = cat.name
-        cat.delete()
-        messages.success(request, f"Категория «{name}» удалена")
-        return redirect("manage:categories")

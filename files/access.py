@@ -1,29 +1,21 @@
 """
 Централизованная логика проверки доступа к файлам и папкам.
 
-Пять уровней проверки (по порядку):
-
-  1. Глобальный admin                → полный доступ ко всему
-  2. Явный FilePermission            → доступ к конкретному файлу
-  3. Руководитель отдела (head)      → полный доступ к файлам своего отдела,
-                                       может удалять и расшаривать
-  4. Рядовой сотрудник (member)      → просмотр, скачивание, загрузка новых,
-                                       удаление только своих файлов
-  5. Всё остальное                   → доступ запрещён
+Уровни проверки:
+  1. Глобальный admin            → полный доступ ко всему
+  2. Владелец файла/папки        → полный доступ к своим объектам
+  3. Явный FilePermission        → доступ к конкретному файлу
+  4. Руководитель отдела (head)  → все файлы отдела, удаление, расшаривание
+  5. Рядовой сотрудник (member)  → просмотр, скачивание, загрузка;
+                                   удаление только своих файлов
 """
 
-from django.db.models import Q
 from audit.models import AuditLog
 from audit.utils import log_action
 
 
-# ── Вспомогательные функции ───────────────────────────────────────────────────
-
 def get_membership(user, department):
-    """
-    Возвращает DepartmentMembership или None.
-    Кешируем в атрибуте объекта чтобы не делать лишних запросов.
-    """
+    """Возвращает DepartmentMembership или None. Кешируется на объекте."""
     from users.models import DepartmentMembership
     cache_key = f"_membership_{department.pk}"
     if not hasattr(user, cache_key):
@@ -36,51 +28,32 @@ def get_membership(user, department):
 
 
 def is_dept_head(user, department):
-    """Является ли пользователь руководителем данного отдела."""
     m = get_membership(user, department)
     return m is not None and m.is_head
 
 
 def is_dept_member(user, department):
-    """Является ли пользователь членом данного отдела (любая роль)."""
     m = get_membership(user, department)
     return m is not None
 
 
 def get_user_departments(user):
-    """Возвращает QuerySet всех отделов пользователя."""
+    """QuerySet всех отделов пользователя."""
     from users.models import Department
     return Department.objects.filter(memberships__user=user)
 
 
-# ── Проверка доступа к файлу ──────────────────────────────────────────────────
+# ── Проверки доступа ──────────────────────────────────────────────────────────
 
 def can_access_file(user, file_obj, request=None):
-    """
-    Может ли пользователь просматривать/скачивать файл.
-    """
-    # 1. Глобальный admin
-    if user.is_admin:
+    """Может ли пользователь просматривать/скачивать файл."""
+    if user.is_admin or file_obj.owner == user:
         return True
-
-    # 2. Владелец файла
-    if file_obj.owner == user:
-        return True
-
-    # 3. Явное разрешение (FilePermission)
     if file_obj.permissions.filter(user=user).exists():
         return True
-
-    # 4. Доступ через категорию отдела (старый механизм — оставляем)
-    if file_obj.category_id and user.department_id:
-        if file_obj.category.departments.filter(id=user.department_id).exists():
-            return True
-
-    # 5. Членство в отделе папки файла
     if file_obj.folder and file_obj.folder.department_id:
         if is_dept_member(user, file_obj.folder.department):
             return True
-
     if request is not None:
         log_action(request, AuditLog.Action.ACCESS_DENIED, obj=file_obj,
                    extra={"reason": "no_permission"})
@@ -88,18 +61,9 @@ def can_access_file(user, file_obj, request=None):
 
 
 def can_delete_file(user, file_obj):
-    """
-    Может ли пользователь удалить файл.
-
-    - admin → всегда да
-    - руководитель отдела → да для любого файла отдела
-    - рядовой сотрудник → только свои файлы
-    """
-    if user.is_admin:
+    """admin и руководитель отдела — любой файл. Рядовой — только свои."""
+    if user.is_admin or file_obj.owner == user:
         return True
-    if file_obj.owner == user:
-        return True
-    # Руководитель отдела папки
     if file_obj.folder and file_obj.folder.department_id:
         if is_dept_head(user, file_obj.folder.department):
             return True
@@ -107,36 +71,17 @@ def can_delete_file(user, file_obj):
 
 
 def can_share_file(user, file_obj):
-    """
-    Может ли пользователь расшаривать файл другим отделам.
-
-    - admin → всегда да
-    - руководитель отдела → да для файлов своего отдела
-    - рядовой сотрудник → нет
-    """
+    """Расшаривать могут только admin и руководитель отдела."""
     if user.is_admin:
         return True
-    if file_obj.owner == user:
-        # Владелец-руководитель может расшаривать
-        if file_obj.folder and file_obj.folder.department_id:
-            return is_dept_head(user, file_obj.folder.department)
-        # Файл без папки — только владелец-руководитель своего отдела
-        if user.department_id:
-            return is_dept_head(user, user.department)
-    return False
+    if file_obj.folder and file_obj.folder.department_id:
+        return is_dept_head(user, file_obj.folder.department)
+    return file_obj.owner == user
 
 
 def can_upload_to_folder(user, folder):
-    """
-    Может ли пользователь загружать файлы в папку.
-
-    - admin → всегда да
-    - руководитель или рядовой сотрудник отдела → да
-    - владелец папки → да
-    """
-    if user.is_admin:
-        return True
-    if folder.owner == user:
+    """Загружать в папку могут admin, владелец и любой член отдела."""
+    if user.is_admin or folder.owner == user:
         return True
     if folder.department_id:
         return is_dept_member(user, folder.department)
@@ -144,51 +89,30 @@ def can_upload_to_folder(user, folder):
 
 
 def can_manage_folder(user, folder):
-    """
-    Может ли пользователь создавать/удалять/переименовывать папку.
-
-    - admin → всегда да
-    - руководитель отдела → да для папок своего отдела
-    - владелец папки → да для своих личных папок
-    """
-    if user.is_admin:
-        return True
-    if folder.owner == user:
+    """Управлять папкой (удалять, переименовывать) могут admin, владелец и руководитель."""
+    if user.is_admin or folder.owner == user:
         return True
     if folder.department_id:
         return is_dept_head(user, folder.department)
     return False
 
 
-# ── QuerySet доступных файлов ─────────────────────────────────────────────────
+# ── QuerySet-ы ────────────────────────────────────────────────────────────────
 
 def get_accessible_files(user):
-    """
-    Возвращает QuerySet всех файлов доступных пользователю.
-    Учитывает все уровни RBAC.
-    """
+    """QuerySet всех файлов доступных пользователю."""
     from files.models import File
+    from django.db.models import Q
 
     if user.is_admin:
         return File.objects.filter(
             status=File.Status.ACTIVE
-        ).select_related("owner", "category", "folder")
+        ).select_related("owner", "folder")
 
-    # Собираем условия через Q
-    conditions = Q(owner=user)
-
-    # Явные разрешения
-    conditions |= Q(permissions__user=user)
-
-    # Доступ через категорию и отдел пользователя (старый механизм)
-    if user.department_id:
-        conditions |= Q(
-            category__departments=user.department,
-            status=File.Status.ACTIVE,
-        )
-
-    # Доступ через членство в отделе папки
     user_dept_ids = get_user_departments(user).values_list("id", flat=True)
+
+    conditions = Q(owner=user)
+    conditions |= Q(permissions__user=user)
     if user_dept_ids:
         conditions |= Q(
             folder__department_id__in=user_dept_ids,
@@ -196,22 +120,19 @@ def get_accessible_files(user):
         )
 
     return File.objects.filter(
-        conditions,
-        status=File.Status.ACTIVE,
-    ).select_related("owner", "category", "folder").distinct()
+        conditions, status=File.Status.ACTIVE,
+    ).select_related("owner", "folder").distinct()
 
 
 def get_accessible_folders(user, parent=None):
-    """
-    Возвращает QuerySet папок доступных пользователю на данном уровне.
-    """
+    """QuerySet папок доступных пользователю на данном уровне."""
     from files.models import Folder
+    from django.db.models import Q
 
     if user.is_admin:
         return Folder.objects.filter(parent=parent).select_related("owner", "department")
 
     user_dept_ids = get_user_departments(user).values_list("id", flat=True)
-
     conditions = Q(owner=user) | Q(department_id__in=user_dept_ids)
 
     return Folder.objects.filter(
