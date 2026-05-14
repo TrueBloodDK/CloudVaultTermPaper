@@ -143,6 +143,31 @@ def has_direct_permission(permission_manager, user, action):
     return None
 
 
+def get_folder_permission_chain(folder):
+    """Папка и её родители от ближайшего объекта к корню."""
+    chain = []
+    node = folder
+    while node is not None:
+        chain.append(node)
+        node = node.parent
+    return chain
+
+
+def has_folder_permission(user, folder, action):
+    """
+    Проверяет права на папку с наследованием.
+
+    Ближайшее правило имеет приоритет: сначала сама папка, затем родитель,
+    затем родитель родителя. Это позволяет дочерней папке переопределить
+    унаследованное allow или deny.
+    """
+    for node in get_folder_permission_chain(folder):
+        direct = has_direct_permission(node.permissions, user, action)
+        if direct is not None:
+            return direct
+    return None
+
+
 # ── Проверки доступа ──────────────────────────────────────────────────────────
 
 def can_access_folder(user, folder, action=PermissionAction.VIEW):
@@ -150,9 +175,9 @@ def can_access_folder(user, folder, action=PermissionAction.VIEW):
     if user.is_system_admin or folder.owner == user:
         return True
 
-    direct = has_direct_permission(folder.permissions, user, action)
-    if direct is not None:
-        return direct
+    inherited = has_folder_permission(user, folder, action)
+    if inherited is not None:
+        return inherited
 
     if folder.department_id:
         if action in (
@@ -181,6 +206,15 @@ def can_access_file(user, file_obj, request=None):
     if direct is not None:
         return direct
 
+    if file_obj.folder:
+        folder_access = has_folder_permission(
+            user,
+            file_obj.folder,
+            PermissionAction.DOWNLOAD,
+        )
+        if folder_access is not None:
+            return folder_access
+
     if file_obj.folder and file_obj.folder.department_id:
         if is_dept_member(user, file_obj.folder.department):
             return True
@@ -194,6 +228,14 @@ def can_delete_file(user, file_obj):
     """Системный админ и руководитель отдела — любой файл. Рядовой — только свои."""
     if user.is_system_admin or file_obj.owner == user:
         return True
+    if file_obj.folder:
+        folder_access = has_folder_permission(
+            user,
+            file_obj.folder,
+            PermissionAction.DELETE,
+        )
+        if folder_access is not None:
+            return folder_access
     if file_obj.folder and file_obj.folder.department_id:
         if is_dept_head(user, file_obj.folder.department):
             return True
@@ -204,9 +246,19 @@ def can_share_file(user, file_obj):
     """Расшаривать могут только системный админ и руководитель отдела."""
     if user.is_system_admin:
         return True
+    if file_obj.owner == user:
+        return True
+    if file_obj.folder:
+        folder_access = has_folder_permission(
+            user,
+            file_obj.folder,
+            PermissionAction.SHARE,
+        )
+        if folder_access is not None:
+            return folder_access
     if file_obj.folder and file_obj.folder.department_id:
         return is_dept_head(user, file_obj.folder.department)
-    return file_obj.owner == user
+    return False
 
 
 def can_upload_to_folder(user, folder):
@@ -224,69 +276,54 @@ def can_manage_folder(user, folder):
 def get_accessible_files(user):
     """QuerySet всех файлов доступных пользователю."""
     from files.models import File
-    from django.db.models import Q
 
     if user.is_system_admin:
         return File.objects.filter(
             status=File.Status.ACTIVE
         ).select_related("owner", "folder")
 
-    user_dept_ids = get_user_departments(user).values_list("id", flat=True)
-
-    file_actions = get_action_scope(PermissionAction.DOWNLOAD)
-
-    conditions = Q(owner=user)
-    conditions |= permission_q_for_user(
-        user,
-        PermissionEffect.ALLOW,
-        file_actions,
-    )
-    if user_dept_ids:
-        conditions |= Q(
-            folder__department_id__in=user_dept_ids,
+    accessible_ids = [
+        file_obj.pk
+        for file_obj in File.objects.filter(
             status=File.Status.ACTIVE,
+        ).select_related(
+            "owner",
+            "folder",
+            "folder__owner",
+            "folder__parent",
+            "folder__department",
+        ).prefetch_related(
+            "permissions",
+            "folder__permissions",
         )
-
-    deny_conditions = permission_q_for_user(
-        user,
-        PermissionEffect.DENY,
-        file_actions,
-    )
-
+        if can_access_file(user, file_obj)
+    ]
     return File.objects.filter(
-        conditions, status=File.Status.ACTIVE,
-    ).exclude(
-        ~Q(owner=user),
-        deny_conditions,
-    ).select_related("owner", "folder").distinct()
+        pk__in=accessible_ids,
+        status=File.Status.ACTIVE,
+    ).select_related("owner", "folder")
 
 
 def get_accessible_folders(user, parent=None):
     """QuerySet папок доступных пользователю на данном уровне."""
     from files.models import Folder
-    from django.db.models import Q
 
     if user.is_system_admin:
         return Folder.objects.filter(parent=parent).select_related("owner", "department")
 
-    user_dept_ids = get_user_departments(user).values_list("id", flat=True)
-    folder_actions = get_action_scope(PermissionAction.VIEW)
-    conditions = Q(owner=user) | Q(department_id__in=user_dept_ids)
-    conditions |= permission_q_for_user(
-        user,
-        PermissionEffect.ALLOW,
-        folder_actions,
-    )
-
-    deny_conditions = permission_q_for_user(
-        user,
-        PermissionEffect.DENY,
-        folder_actions,
-    )
+    accessible_ids = [
+        folder.pk
+        for folder in Folder.objects.filter(parent=parent).select_related(
+            "owner",
+            "department",
+            "parent",
+        ).prefetch_related(
+            "permissions",
+        )
+        if can_access_folder(user, folder)
+    ]
 
     return Folder.objects.filter(
-        conditions, parent=parent
-    ).exclude(
-        ~Q(owner=user),
-        deny_conditions,
+        pk__in=accessible_ids,
+        parent=parent,
     ).select_related("owner", "department").distinct()

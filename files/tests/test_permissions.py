@@ -1,15 +1,19 @@
 """Tests for resource permission models."""
 
 import pytest
+from django.core.files.base import ContentFile
 from django.core.exceptions import ValidationError
 
 from files.access import (
+    can_access_file,
     can_access_folder,
     can_manage_folder,
     can_upload_to_folder,
+    get_accessible_files,
     get_accessible_folders,
 )
-from files.models import FilePermission, Folder, FolderPermission
+from files.encryption import compute_checksum, encrypt_file
+from files.models import File, FilePermission, Folder, FolderPermission
 from users.models import Department, DepartmentMembership
 from users.rbac import PermissionAction, PermissionEffect
 
@@ -161,3 +165,81 @@ class TestFolderPermissionAccess:
         )
 
         assert can_access_folder(another_user, folder) is False
+
+    def test_parent_permission_is_inherited_by_child_folder(
+        self, regular_user, another_user
+    ):
+        parent = Folder.objects.create(name="Parent", owner=regular_user)
+        child = Folder.objects.create(name="Child", owner=regular_user, parent=parent)
+        FolderPermission.objects.create(
+            folder=parent,
+            user=another_user,
+            access=PermissionAction.VIEW,
+            granted_by=regular_user,
+        )
+
+        assert can_access_folder(another_user, child) is True
+        assert child in get_accessible_folders(another_user, parent=parent)
+
+    def test_child_deny_overrides_parent_allow(self, regular_user, another_user):
+        parent = Folder.objects.create(name="Parent allow", owner=regular_user)
+        child = Folder.objects.create(name="Child deny", owner=regular_user, parent=parent)
+        FolderPermission.objects.create(
+            folder=parent,
+            user=another_user,
+            access=PermissionAction.VIEW,
+            effect=PermissionEffect.ALLOW,
+            granted_by=regular_user,
+        )
+        FolderPermission.objects.create(
+            folder=child,
+            user=another_user,
+            access=PermissionAction.VIEW,
+            effect=PermissionEffect.DENY,
+            granted_by=regular_user,
+        )
+
+        assert can_access_folder(another_user, child) is False
+        assert child not in get_accessible_folders(another_user, parent=parent)
+
+    def test_child_allow_overrides_parent_deny(self, regular_user, another_user):
+        parent = Folder.objects.create(name="Parent deny", owner=regular_user)
+        child = Folder.objects.create(name="Child allow", owner=regular_user, parent=parent)
+        FolderPermission.objects.create(
+            folder=parent,
+            user=another_user,
+            access=PermissionAction.VIEW,
+            effect=PermissionEffect.DENY,
+            granted_by=regular_user,
+        )
+        FolderPermission.objects.create(
+            folder=child,
+            user=another_user,
+            access=PermissionAction.VIEW,
+            effect=PermissionEffect.ALLOW,
+            granted_by=regular_user,
+        )
+
+        assert can_access_folder(another_user, child) is True
+
+    def test_file_inherits_download_permission_from_folder(self, regular_user, another_user):
+        folder = Folder.objects.create(name="Folder download", owner=regular_user)
+        raw = b"folder inherited file"
+        file_obj = File.objects.create(
+            owner=regular_user,
+            folder=folder,
+            original_name="inherited.txt",
+            encrypted_file=ContentFile(encrypt_file(raw), name="inherited.txt"),
+            mime_type="text/plain",
+            size=len(raw),
+            checksum=compute_checksum(raw),
+        )
+        FolderPermission.objects.create(
+            folder=folder,
+            user=another_user,
+            access=PermissionAction.DOWNLOAD,
+            granted_by=regular_user,
+        )
+
+        assert can_access_file(another_user, file_obj) is True
+        assert file_obj in get_accessible_files(another_user)
