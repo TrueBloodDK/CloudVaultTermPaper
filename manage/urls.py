@@ -3,7 +3,7 @@ from .views import (
     UserListView, UserUpdateView,
     MembershipCreateView, MembershipDeleteView,
     DepartmentListView, DepartmentCreateView, DepartmentUpdateView, DepartmentDeleteView,
-    FolderListView,
+    FolderListView, FolderPermissionCreateView, FolderPermissionDeleteView,
 )
 
 app_name = "manage"
@@ -20,4 +20,8 @@ urlpatterns = [
     path("departments/<int:pk>/delete/", DepartmentDeleteView.as_view(), name="dept-delete"),
 
     path("folders/",                     FolderListView.as_view(),       name="folders"),
+    path("folders/<uuid:pk>/permissions/", FolderPermissionCreateView.as_view(),
+         name="folder-permission-create"),
+    path("folder-permissions/<int:pk>/delete/", FolderPermissionDeleteView.as_view(),
+         name="folder-permission-delete"),
 ]

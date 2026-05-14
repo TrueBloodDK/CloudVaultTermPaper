@@ -43,6 +43,7 @@
           <th>Отдел</th>
           <th>Владелец</th>
           <th>Файлов</th>
+          <th>Права</th>
           <th>Создана</th>
           <th>Действия</th>
         </tr>
@@ -69,12 +70,38 @@
           </td>
           <td class="text-muted">{{ folder.owner.email }}</td>
           <td class="mono">{{ folder.files.count }}</td>
+          <td style="min-width:220px">
+            <div class="permission-list">
+              {% for perm in folder.permissions.all %}
+              <form method="post"
+                    action="{% url 'manage:folder-permission-delete' perm.id %}"
+                    class="permission-pill-form"
+                    onsubmit="return confirm('Отозвать право?')">
+                {% csrf_token %}
+                <button type="submit"
+                        class="permission-pill permission-{{ perm.effect }}"
+                        title="Нажмите, чтобы отозвать">
+                  {{ perm.subject_label }} · {{ perm.get_access_display }}
+                </button>
+              </form>
+              {% empty %}
+              <span class="text-muted">—</span>
+              {% endfor %}
+            </div>
+          </td>
           <td class="mono text-muted">{{ folder.created_at|date:"d.m.Y" }}</td>
           <td class="file-actions">
             <button class="btn btn-sm btn-ghost"
+                    onclick="openPermissionModal(
+                      '{{ folder.id }}',
+                      '{{ folder.name|escapejs }}'
+                    )">
+              Доступ
+            </button>
+            <button class="btn btn-sm btn-ghost"
                     onclick="openDeptModal(
                       '{{ folder.id }}',
-                      '{{ folder.name }}',
+                      '{{ folder.name|escapejs }}',
                       '{{ folder.department_id|default:'' }}'
                     )">
               ⊙ Отдел
@@ -83,7 +110,7 @@
         </tr>
         {% empty %}
         <tr>
-          <td colspan="7" class="empty-cell">Папок не найдено</td>
+          <td colspan="8" class="empty-cell">Папок не найдено</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -92,12 +119,82 @@
 
 </div>
 
+<!-- Модал: выдать право -->
+<div class="modal-backdrop" id="permission-modal" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 class="modal-title">Доступ к папке</h2>
+      <button class="modal-close" onclick="closeModals()">×</button>
+    </div>
+    <p class="modal-file-name" id="permission-folder-name"></p>
+    <form method="post" id="permission-form" class="modal-form">
+      {% csrf_token %}
+      <div class="form-group">
+        <label class="form-label">Адресат</label>
+        <select class="form-input form-select" name="subject_type" id="subject-type"
+                onchange="syncPermissionSubjectFields()">
+          <option value="user">Пользователь</option>
+          <option value="department">Отдел</option>
+          <option value="department_role">Роль в отделе</option>
+        </select>
+      </div>
+      <div class="form-group" id="user-field">
+        <label class="form-label">Email пользователя</label>
+        <input class="form-input" type="email" name="user_email"
+               list="permission-users" placeholder="user@company.ru">
+        <datalist id="permission-users">
+          {% for u in users %}
+          <option value="{{ u.email }}">{{ u.full_name }}</option>
+          {% endfor %}
+        </datalist>
+      </div>
+      <div class="form-group" id="department-field" style="display:none">
+        <label class="form-label">Отдел</label>
+        <select class="form-input form-select" name="department">
+          <option value="">Выберите отдел</option>
+          {% for dept in departments %}
+          <option value="{{ dept.id }}">{{ dept.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" id="department-role-field" style="display:none">
+        <label class="form-label">Роль в отделе</label>
+        <select class="form-input form-select" name="department_role">
+          {% for value, label in department_roles %}
+          <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Действие</label>
+        <select class="form-input form-select" name="access">
+          {% for value, label in permission_actions %}
+          <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Правило</label>
+        <select class="form-input form-select" name="effect">
+          {% for value, label in permission_effects %}
+          <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeModals()">Отмена</button>
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- Модал: сменить отдел -->
 <div class="modal-backdrop" id="dept-modal" style="display:none">
   <div class="modal">
     <div class="modal-header">
       <h2 class="modal-title">Отдел папки</h2>
-      <button class="modal-close" onclick="document.getElementById('dept-modal').style.display='none'">×</button>
+      <button class="modal-close" onclick="closeModals()">×</button>
     </div>
     <p class="modal-file-name" id="dept-folder-name"></p>
     <form method="post" id="dept-form" class="modal-form">
@@ -116,7 +213,7 @@
       </p>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost"
-                onclick="document.getElementById('dept-modal').style.display='none'">
+                onclick="closeModals()">
           Отмена
         </button>
         <button type="submit" class="btn btn-primary">Сохранить</button>
@@ -126,17 +223,38 @@
 </div>
 
 <script>
+function closeModals() {
+  document.querySelectorAll('.modal-backdrop').forEach(m => m.style.display = 'none');
+}
+
 function openDeptModal(id, name, currentDeptId) {
   document.getElementById('dept-modal').style.display = 'flex';
   document.getElementById('dept-folder-name').textContent = name;
   document.getElementById('dept-form').action = '/files/folders/' + id + '/dept/';
   document.getElementById('dept-select').value = currentDeptId || '';
 }
+
+function openPermissionModal(id, name) {
+  document.getElementById('permission-modal').style.display = 'flex';
+  document.getElementById('permission-folder-name').textContent = name;
+  document.getElementById('permission-form').action = '/manage/folders/' + id + '/permissions/';
+  syncPermissionSubjectFields();
+}
+
+function syncPermissionSubjectFields() {
+  const type = document.getElementById('subject-type').value;
+  document.getElementById('user-field').style.display = type === 'user' ? 'block' : 'none';
+  document.getElementById('department-field').style.display =
+    type === 'department' || type === 'department_role' ? 'block' : 'none';
+  document.getElementById('department-role-field').style.display =
+    type === 'department_role' ? 'block' : 'none';
+}
+
 document.addEventListener('click', function(e) {
   if (e.target.classList.contains('modal-backdrop')) e.target.style.display = 'none';
 });
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') document.getElementById('dept-modal').style.display = 'none';
+  if (e.key === 'Escape') closeModals();
 });
 </script>
 {% endblock %}

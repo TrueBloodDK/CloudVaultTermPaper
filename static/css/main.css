@@ -627,6 +627,37 @@ body {
 }
 .folder-link:hover { color: var(--accent); }
 
+.permission-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.permission-pill-form {
+  display: inline-flex;
+}
+.permission-pill {
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 2px 7px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+.permission-allow {
+  background: var(--green-dim);
+  border-color: rgba(62,207,142,0.28);
+  color: var(--green);
+}
+.permission-deny {
+  background: var(--red-dim);
+  border-color: rgba(245,95,95,0.28);
+  color: var(--red);
+}
+
 /* ── Роли в отделах (DepartmentMembership) ── */
 
 .membership-role {
