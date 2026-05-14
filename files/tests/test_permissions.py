@@ -3,8 +3,14 @@
 import pytest
 from django.core.exceptions import ValidationError
 
+from files.access import (
+    can_access_folder,
+    can_manage_folder,
+    can_upload_to_folder,
+    get_accessible_folders,
+)
 from files.models import FilePermission, Folder, FolderPermission
-from users.models import Department
+from users.models import Department, DepartmentMembership
 from users.rbac import PermissionAction, PermissionEffect
 
 
@@ -90,3 +96,68 @@ class TestFilePermission:
 
         assert permission.subject_label == department.name
         assert permission.is_deny is True
+
+
+@pytest.mark.django_db
+class TestFolderPermissionAccess:
+    def test_user_permission_allows_folder_view(self, regular_user, another_user):
+        folder = Folder.objects.create(name="Shared", owner=regular_user)
+        FolderPermission.objects.create(
+            folder=folder,
+            user=another_user,
+            access=PermissionAction.VIEW,
+            granted_by=regular_user,
+        )
+
+        assert can_access_folder(another_user, folder) is True
+        assert folder in get_accessible_folders(another_user)
+
+    def test_department_permission_allows_upload_for_members(
+        self, regular_user, another_user, department
+    ):
+        folder = Folder.objects.create(name="Department shared", owner=regular_user)
+        DepartmentMembership.objects.create(user=another_user, department=department)
+        FolderPermission.objects.create(
+            folder=folder,
+            department=department,
+            access=PermissionAction.UPLOAD,
+            granted_by=regular_user,
+        )
+
+        assert can_upload_to_folder(another_user, folder) is True
+
+    def test_department_role_permission_is_limited_to_that_role(
+        self, regular_user, another_user, department
+    ):
+        folder = Folder.objects.create(name="Heads only", owner=regular_user)
+        DepartmentMembership.objects.create(
+            user=another_user,
+            department=department,
+            role=DepartmentMembership.Role.MEMBER,
+        )
+        FolderPermission.objects.create(
+            folder=folder,
+            department=department,
+            department_role=DepartmentMembership.Role.HEAD,
+            access=PermissionAction.MANAGE,
+            granted_by=regular_user,
+        )
+
+        assert can_manage_folder(another_user, folder) is False
+
+    def test_deny_overrides_department_membership(self, regular_user, another_user, department):
+        folder = Folder.objects.create(
+            name="Denied department folder",
+            owner=regular_user,
+            department=department,
+        )
+        DepartmentMembership.objects.create(user=another_user, department=department)
+        FolderPermission.objects.create(
+            folder=folder,
+            user=another_user,
+            access=PermissionAction.VIEW,
+            effect=PermissionEffect.DENY,
+            granted_by=regular_user,
+        )
+
+        assert can_access_folder(another_user, folder) is False
