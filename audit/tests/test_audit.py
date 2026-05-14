@@ -135,25 +135,30 @@ class TestAuditView:
         resp = auth_client.get(reverse("audit:list"))
         assert resp.status_code == 302
 
-    def test_admin_can_view_audit(self, admin_client, admin_user):
+    def test_system_admin_redirected_from_audit(self, admin_client, admin_user):
         AuditLog.objects.create(user=admin_user, action=AuditLog.Action.LOGIN)
         resp = admin_client.get(reverse("audit:list"))
+        assert resp.status_code == 302
+
+    def test_security_admin_can_view_audit(self, security_admin_client, security_admin_user):
+        AuditLog.objects.create(user=security_admin_user, action=AuditLog.Action.LOGIN)
+        resp = security_admin_client.get(reverse("audit:list"))
         assert resp.status_code == 200
 
-    def test_audit_shows_log_entries(self, admin_client, regular_user):
+    def test_audit_shows_log_entries(self, security_admin_client, regular_user):
         AuditLog.objects.create(
             user=regular_user,
             action=AuditLog.Action.FILE_UPLOAD,
             object_repr="secret.pdf",
         )
-        resp = admin_client.get(reverse("audit:list"))
+        resp = security_admin_client.get(reverse("audit:list"))
         assert "secret.pdf" in resp.content.decode()
 
-    def test_audit_filter_by_action(self, admin_client, regular_user):
+    def test_audit_filter_by_action(self, security_admin_client, regular_user):
         AuditLog.objects.create(user=regular_user, action=AuditLog.Action.LOGIN)
         AuditLog.objects.create(user=regular_user, action=AuditLog.Action.FILE_DELETE)
 
-        resp = admin_client.get(reverse("audit:list") + "?action=login")
+        resp = security_admin_client.get(reverse("audit:list") + "?action=login")
         assert resp.status_code == 200
 
         # Фильтр по action=login → только 1 запись в таблице

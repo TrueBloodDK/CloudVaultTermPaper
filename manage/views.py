@@ -14,8 +14,8 @@ class AdminRequiredMixin(LoginRequiredMixin):
     def dispatch(self, request, *args, **kwargs):
         if not request.user.is_authenticated:
             return self.handle_no_permission()
-        if not request.user.is_admin:
-            messages.error(request, "Доступ только для администраторов")
+        if not request.user.is_system_admin:
+            messages.error(request, "Доступ только для администратора системы")
             return redirect("files:list")
         return super().dispatch(request, *args, **kwargs)
 

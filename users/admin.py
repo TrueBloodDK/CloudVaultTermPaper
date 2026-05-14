@@ -52,8 +52,6 @@ class UserAdmin(BaseUserAdmin):
             "system_admin": ("#f55f5f", "#2d0a0a"),
             "security_admin": ("#f5c842", "#2d2500"),
             "user": ("#4f9eff", "#051a33"),
-            "admin": ("#f55f5f", "#2d0a0a"),
-            "manager": ("#f5c842", "#2d2500"),
         }
         bg, fg = colors.get(obj.role, ("#888", "#fff"))
         return format_html(

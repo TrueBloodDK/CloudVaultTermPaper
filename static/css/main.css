@@ -123,9 +123,9 @@ body {
   text-transform: uppercase;
 }
 .user-role.role-xs { font-size: 0.65rem; padding: 2px 6px; }
-.role-admin    { background: var(--red-dim);    color: var(--red);    border: 1px solid rgba(245,95,95,0.25); }
-.role-manager  { background: var(--yellow-dim); color: var(--yellow); border: 1px solid rgba(245,200,66,0.25); }
-.role-user     { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(79,158,255,0.25); }
+.role-system_admin   { background: var(--red-dim);    color: var(--red);    border: 1px solid rgba(245,95,95,0.25); }
+.role-security_admin { background: var(--yellow-dim); color: var(--yellow); border: 1px solid rgba(245,200,66,0.25); }
+.role-user           { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(79,158,255,0.25); }
 
 /* ── Кнопки ── */
 

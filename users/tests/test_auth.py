@@ -160,7 +160,7 @@ class TestUserModel:
             role=User.Role.SECURITY_ADMIN,
         )
         assert user.is_security_admin is True
-        assert user.is_admin is True
+        assert user.is_admin is False
         assert user.is_privileged_admin is True
 
     def test_is_admin_false_for_regular(self, regular_user):

@@ -33,7 +33,7 @@ class FileListView(LoginRequiredMixin, View):
         if folder_id:
             current_folder = get_object_or_404(Folder, pk=folder_id)
             accessible = get_accessible_folders(request.user, parent=current_folder.parent)
-            if not request.user.is_admin and not accessible.filter(pk=current_folder.pk).exists():
+            if not request.user.is_system_admin and not accessible.filter(pk=current_folder.pk).exists():
                 messages.error(request, "Нет доступа к этой папке")
                 return redirect("files:list")
             breadcrumbs = current_folder.get_breadcrumbs()
@@ -48,12 +48,12 @@ class FileListView(LoginRequiredMixin, View):
             "current_folder": current_folder,
             "breadcrumbs": breadcrumbs,
             "can_upload": _can_upload_here(request.user, current_folder),
-            "departments": Department.objects.all() if request.user.is_admin else [],
+            "departments": Department.objects.all() if request.user.is_system_admin else [],
         })
 
 
 def _can_upload_here(user, folder):
-    if user.is_admin or folder is None:
+    if user.is_system_admin or folder is None:
         return True
     return can_upload_to_folder(user, folder)
 
@@ -268,12 +268,12 @@ def _soft_delete_folder_contents(folder):
 
 
 class FolderChangeDeptView(LoginRequiredMixin, View):
-    """POST /files/folders/<uuid>/dept/ — сменить отдел папки (только admin)."""
+    """POST /files/folders/<uuid>/dept/ — сменить отдел папки (только system_admin)."""
     login_url = "/auth/login/"
 
     def post(self, request, pk):
-        if not request.user.is_admin:
-            messages.error(request, "Только администратор может менять отдел папки")
+        if not request.user.is_system_admin:
+            messages.error(request, "Только администратор системы может менять отдел папки")
             return redirect("files:list")
 
         folder = get_object_or_404(Folder, pk=pk)

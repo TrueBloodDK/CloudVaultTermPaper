@@ -1,4 +1,4 @@
-"""Веб-представление журнала аудита (только для администраторов)."""
+"""Веб-представление журнала аудита (только для администратора безопасности)."""
 
 from django.shortcuts import render, redirect
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -13,7 +13,7 @@ class AuditListView(LoginRequiredMixin, View):
     template_name = "audit/list.html"
 
     def get(self, request):
-        if not request.user.is_admin:
+        if not request.user.is_security_admin:
             return redirect("files:list")
 
         qs = AuditLog.objects.select_related("user").all()

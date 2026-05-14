@@ -56,16 +56,15 @@ class User(AbstractBaseUser, PermissionsMixin):
         SECURITY_ADMIN — управляет политиками доступа и аудитом
         USER           — работает с разрешёнными файлами и папками
 
-    Старые роли ADMIN/MANAGER оставлены как временная совместимость
-    до миграции существующих данных на новую RBAC-модель.
+    Администратор системы и администратор безопасности имеют разные зоны
+    ответственности; обычные пользователи получают доступ через отделы
+    и объектные разрешения.
     """
 
     class Role(models.TextChoices):
         SYSTEM_ADMIN = "system_admin", "Администратор системы"
         SECURITY_ADMIN = "security_admin", "Администратор безопасности"
         USER = "user", "Пользователь"
-        ADMIN = "admin", "Администратор (устар.)"
-        MANAGER = "manager", "Менеджер (устар.)"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email = models.EmailField(unique=True, verbose_name="Email")
@@ -106,24 +105,17 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     @property
     def is_admin(self):
-        return self.role in {
-            self.Role.SYSTEM_ADMIN,
-            self.Role.SECURITY_ADMIN,
-            self.Role.ADMIN,
-        }
+        """Совместимый alias для системного администратора."""
+        return self.is_system_admin
 
     @property
     def is_manager(self):
-        return self.role in {
-            self.Role.SYSTEM_ADMIN,
-            self.Role.SECURITY_ADMIN,
-            self.Role.ADMIN,
-            self.Role.MANAGER,
-        }
+        """Совместимый alias до замены manager на роли внутри отделов."""
+        return self.is_system_admin
 
     @property
     def is_system_admin(self):
-        return self.role in {self.Role.SYSTEM_ADMIN, self.Role.ADMIN}
+        return self.role == self.Role.SYSTEM_ADMIN
 
     @property
     def is_security_admin(self):

@@ -28,6 +28,17 @@ def regular_user(db, django_user_model):
 
 
 @pytest.fixture
+def security_admin_user(db, django_user_model):
+    return django_user_model.objects.create_user(
+        email="security@test.ru",
+        full_name="Администратор Безопасности",
+        password="securitypass123",
+        role="security_admin",
+        is_staff=True,
+    )
+
+
+@pytest.fixture
 def another_user(db, django_user_model):
     return django_user_model.objects.create_user(
         email="another@test.ru",
@@ -67,4 +78,11 @@ def auth_client(client, regular_user):
 def admin_client(client, admin_user):
     """Клиент с авторизованным администратором."""
     client.force_login(admin_user)
+    return client
+
+
+@pytest.fixture
+def security_admin_client(client, security_admin_user):
+    """Клиент с авторизованным администратором безопасности."""
+    client.force_login(security_admin_user)
     return client

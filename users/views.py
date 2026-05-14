@@ -13,7 +13,7 @@ from .serializers import (
     UserProfileSerializer,
     UserListSerializer,
 )
-from .permissions import IsAdmin
+from .permissions import IsSystemAdmin
 
 
 class RegisterView(generics.CreateAPIView):
@@ -58,8 +58,8 @@ class ProfileView(generics.RetrieveUpdateAPIView):
 
 
 class UserListView(generics.ListAPIView):
-    """GET /api/v1/auth/users/ — список всех пользователей (только admin)."""
+    """GET /api/v1/auth/users/ — список всех пользователей (только system_admin)."""
 
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, IsSystemAdmin]
     serializer_class = UserListSerializer
     queryset = User.objects.all()

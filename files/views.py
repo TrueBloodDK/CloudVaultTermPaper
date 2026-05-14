@@ -120,7 +120,7 @@ class FileDeleteView(APIView):
     def delete(self, request, pk):
         file_obj = get_object_or_404(File, pk=pk, status=File.Status.ACTIVE)
 
-        if not request.user.is_admin and file_obj.owner != request.user:
+        if not request.user.is_system_admin and file_obj.owner != request.user:
             log_action(request, AuditLog.Action.ACCESS_DENIED, obj=file_obj)
             return Response({"detail": "Нет доступа"}, status=status.HTTP_403_FORBIDDEN)
 
@@ -139,7 +139,7 @@ class FileShareView(APIView):
     def post(self, request, pk):
         file_obj = get_object_or_404(File, pk=pk, status=File.Status.ACTIVE)
 
-        if not request.user.is_admin and file_obj.owner != request.user:
+        if not request.user.is_system_admin and file_obj.owner != request.user:
             return Response(
                 {"detail": "Только владелец может делиться файлом"},
                 status=status.HTTP_403_FORBIDDEN,

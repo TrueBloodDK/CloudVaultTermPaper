@@ -60,19 +60,19 @@
           <td class="text-muted">{{ folder.owner.email }}</td>
           <td class="mono text-muted">{{ folder.updated_at|date:"d.m.Y H:i" }}</td>
           <td class="file-actions">
-            {% if user.is_admin or folder.owner == user %}
+            {% if user.is_system_admin or folder.owner == user %}
             <button class="btn btn-sm btn-ghost"
                     onclick="openRenameModal('{{ folder.id }}', '{{ folder.name }}')">
               ✎
             </button>
             {% endif %}
-            {% if user.is_admin %}
+            {% if user.is_system_admin %}
             <button class="btn btn-sm btn-ghost"
                     onclick="openDeptModal('{{ folder.id }}', '{{ folder.name }}', '{{ folder.department_id|default:'' }}')">
               ⊙ Отдел
             </button>
             {% endif %}
-            {% if user.is_admin or folder.owner == user %}
+            {% if user.is_system_admin or folder.owner == user %}
             <form method="post" action="{% url 'files:folder-delete' folder.id %}"
                   style="display:inline"
                   onsubmit="return confirm('Удалить папку «{{ folder.name }}» и всё её содержимое?')">
@@ -98,7 +98,7 @@
           <td class="file-actions">
             <a href="{% url 'files:download' file.id %}"
                class="btn btn-sm btn-ghost" title="Скачать">↓</a>
-            {% if user.is_admin or file.owner == user %}
+            {% if user.is_system_admin or file.owner == user %}
             <button class="btn btn-sm btn-ghost"
                     onclick="openShareModal('{{ file.id }}', '{{ file.original_name }}')"
                     title="Доступ">⇄</button>
@@ -263,8 +263,8 @@ function openDeptModal(id, name, currentDeptId) {
 }
 </script>
 
-<!-- Модал: сменить отдел папки (только admin) -->
-{% if user.is_admin %}
+<!-- Модал: сменить отдел папки (только system_admin) -->
+{% if user.is_system_admin %}
 <div class="modal-backdrop" id="dept-modal" style="display:none">
   <div class="modal">
     <div class="modal-header">
