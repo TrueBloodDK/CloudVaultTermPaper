@@ -86,9 +86,9 @@
       <div class="form-group">
         <label class="form-label">Глобальная роль</label>
         <select class="form-input form-select" name="role">
-          <option value="user">Пользователь</option>
-          <option value="manager">Менеджер</option>
-          <option value="admin">Администратор</option>
+          {% for value, label in role_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+          {% endfor %}
         </select>
       </div>
       <div class="form-group">

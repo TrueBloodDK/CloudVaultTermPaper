@@ -4,6 +4,7 @@ import pytest
 from django.urls import reverse
 
 from users.models import User
+from users.rbac import PermissionAction, PermissionEffect, ResourceType
 
 
 @pytest.mark.django_db
@@ -147,6 +148,21 @@ class TestUserModel:
     def test_is_admin_property(self, admin_user):
         assert admin_user.is_admin is True
 
+    def test_system_admin_property(self, admin_user):
+        assert admin_user.is_system_admin is True
+        assert admin_user.is_privileged_admin is True
+
+    def test_security_admin_property(self, django_user_model):
+        user = django_user_model.objects.create_user(
+            email="security@test.ru",
+            full_name="Администратор Безопасности",
+            password="securitypass123",
+            role=User.Role.SECURITY_ADMIN,
+        )
+        assert user.is_security_admin is True
+        assert user.is_admin is True
+        assert user.is_privileged_admin is True
+
     def test_is_admin_false_for_regular(self, regular_user):
         assert regular_user.is_admin is False
 
@@ -167,3 +183,22 @@ class TestUserModel:
         """Пароль не хранится в открытом виде."""
         assert regular_user.password != "userpass123"
         assert regular_user.password.startswith("pbkdf2_")
+
+
+class TestRbacConstants:
+    """Тесты общего словаря RBAC."""
+
+    def test_permission_actions_include_folder_and_file_operations(self):
+        assert PermissionAction.VIEW == "view"
+        assert PermissionAction.DOWNLOAD == "download"
+        assert PermissionAction.UPLOAD == "upload"
+        assert PermissionAction.MANAGE == "manage"
+        assert PermissionAction.AUDIT == "audit"
+
+    def test_resource_types_are_file_and_folder(self):
+        assert ResourceType.FILE == "file"
+        assert ResourceType.FOLDER == "folder"
+
+    def test_permission_effects_are_allow_and_deny(self):
+        assert PermissionEffect.ALLOW == "allow"
+        assert PermissionEffect.DENY == "deny"

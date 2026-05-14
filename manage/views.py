@@ -31,6 +31,7 @@ class UserListView(AdminRequiredMixin, View):
         return render(request, "manage/users.html", {
             "users": users,
             "departments": departments,
+            "role_choices": User.Role.choices,
         })
 
 

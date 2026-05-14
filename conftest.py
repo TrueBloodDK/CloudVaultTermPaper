@@ -12,7 +12,7 @@ def admin_user(db, django_user_model):
         email="admin@test.ru",
         full_name="Администратор Системы",
         password="adminpass123",
-        role="admin",
+        role="system_admin",
         is_staff=True,
     )
 

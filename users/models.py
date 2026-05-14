@@ -43,7 +43,7 @@ class UserManager(BaseUserManager):
     def create_superuser(self, email, password=None, **extra_fields):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
-        extra_fields.setdefault("role", User.Role.ADMIN)
+        extra_fields.setdefault("role", User.Role.SYSTEM_ADMIN)
         return self.create_user(email, password, **extra_fields)
 
 
@@ -52,15 +52,20 @@ class User(AbstractBaseUser, PermissionsMixin):
     Пользователь системы.
 
     Роли:
-        ADMIN   — полный доступ ко всем файлам и настройкам
-        MANAGER — может управлять файлами своей группы
-        USER    — доступ только к своим файлам + файлам отдела
+        SYSTEM_ADMIN   — управляет структурой системы и пользователями
+        SECURITY_ADMIN — управляет политиками доступа и аудитом
+        USER           — работает с разрешёнными файлами и папками
+
+    Старые роли ADMIN/MANAGER оставлены как временная совместимость
+    до миграции существующих данных на новую RBAC-модель.
     """
 
     class Role(models.TextChoices):
-        ADMIN = "admin", "Администратор"
-        MANAGER = "manager", "Менеджер"
+        SYSTEM_ADMIN = "system_admin", "Администратор системы"
+        SECURITY_ADMIN = "security_admin", "Администратор безопасности"
         USER = "user", "Пользователь"
+        ADMIN = "admin", "Администратор (устар.)"
+        MANAGER = "manager", "Менеджер (устар.)"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email = models.EmailField(unique=True, verbose_name="Email")
@@ -101,11 +106,32 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     @property
     def is_admin(self):
-        return self.role == self.Role.ADMIN
+        return self.role in {
+            self.Role.SYSTEM_ADMIN,
+            self.Role.SECURITY_ADMIN,
+            self.Role.ADMIN,
+        }
 
     @property
     def is_manager(self):
-        return self.role in (self.Role.ADMIN, self.Role.MANAGER)
+        return self.role in {
+            self.Role.SYSTEM_ADMIN,
+            self.Role.SECURITY_ADMIN,
+            self.Role.ADMIN,
+            self.Role.MANAGER,
+        }
+
+    @property
+    def is_system_admin(self):
+        return self.role in {self.Role.SYSTEM_ADMIN, self.Role.ADMIN}
+
+    @property
+    def is_security_admin(self):
+        return self.role == self.Role.SECURITY_ADMIN
+
+    @property
+    def is_privileged_admin(self):
+        return self.is_system_admin or self.is_security_admin
 
 
 class DepartmentMembership(models.Model):
@@ -113,7 +139,7 @@ class DepartmentMembership(models.Model):
     Роль пользователя внутри конкретного отдела.
 
     Отличается от глобальной роли User.role:
-      - User.role = admin/manager/user — глобальная роль в системе
+      - User.role = system_admin/security_admin/user — глобальная роль в системе
       - DepartmentMembership.role = head/member — роль в конкретном отделе
 
     Один пользователь может быть руководителем HR
