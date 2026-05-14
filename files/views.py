@@ -17,9 +17,13 @@ from .serializers import (
     FilePermissionSerializer,
 )
 from .encryption import encrypt_file, decrypt_file, compute_checksum
-from .access import can_access_file, get_accessible_files
+from .access import (
+    can_access_file,
+    can_delete_file,
+    can_share_file,
+    get_accessible_files,
+)
 from users.models import User
-from users.permissions import IsAdmin
 from audit.models import AuditLog
 from audit.utils import log_action
 
@@ -120,7 +124,7 @@ class FileDeleteView(APIView):
     def delete(self, request, pk):
         file_obj = get_object_or_404(File, pk=pk, status=File.Status.ACTIVE)
 
-        if not request.user.is_system_admin and file_obj.owner != request.user:
+        if not can_delete_file(request.user, file_obj):
             log_action(request, AuditLog.Action.ACCESS_DENIED, obj=file_obj)
             return Response({"detail": "Нет доступа"}, status=status.HTTP_403_FORBIDDEN)
 
@@ -139,9 +143,9 @@ class FileShareView(APIView):
     def post(self, request, pk):
         file_obj = get_object_or_404(File, pk=pk, status=File.Status.ACTIVE)
 
-        if not request.user.is_system_admin and file_obj.owner != request.user:
+        if not can_share_file(request.user, file_obj):
             return Response(
-                {"detail": "Только владелец может делиться файлом"},
+                {"detail": "Нет прав для передачи доступа к файлу"},
                 status=status.HTTP_403_FORBIDDEN,
             )
 

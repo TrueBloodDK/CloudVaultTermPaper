@@ -12,7 +12,7 @@ from files.models import File, FilePermission, Folder
 from files.encryption import encrypt_file, decrypt_file, compute_checksum
 from files.serializers import FileUploadSerializer
 from files.access import (
-    can_access_file, can_delete_file, can_share_file,
+    can_access_file, can_access_folder, can_delete_file, can_share_file,
     can_upload_to_folder, can_manage_folder,
     get_accessible_files, get_accessible_folders,
 )
@@ -32,8 +32,7 @@ class FileListView(LoginRequiredMixin, View):
 
         if folder_id:
             current_folder = get_object_or_404(Folder, pk=folder_id)
-            accessible = get_accessible_folders(request.user, parent=current_folder.parent)
-            if not request.user.is_system_admin and not accessible.filter(pk=current_folder.pk).exists():
+            if not can_access_folder(request.user, current_folder):
                 messages.error(request, "Нет доступа к этой папке")
                 return redirect("files:list")
             breadcrumbs = current_folder.get_breadcrumbs()
