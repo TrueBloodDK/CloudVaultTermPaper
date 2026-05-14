@@ -171,6 +171,13 @@ class FileShareView(APIView):
             },
         )
 
+        log_action(request, AuditLog.Action.PERMISSION_GRANT, obj=perm, extra={
+            "file": str(file_obj.id),
+            "file_name": file_obj.original_name,
+            "target_user": target_user.email,
+            "access": access,
+            "created": created,
+        })
         action = "создан" if created else "обновлён"
         return Response(
             {"detail": f"Доступ {action} для {target_user.email}"},

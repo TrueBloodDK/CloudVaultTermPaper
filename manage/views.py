@@ -8,6 +8,8 @@ from django.views import View
 
 from users.models import User, Department, DepartmentMembership
 from users.rbac import PermissionAction, PermissionEffect
+from audit.models import AuditLog
+from audit.utils import log_action
 
 
 class AdminRequiredMixin(LoginRequiredMixin):
@@ -56,6 +58,10 @@ class UserUpdateView(AdminRequiredMixin, View):
         user.is_active = is_active
         user.save(update_fields=["role", "is_active"])
 
+        log_action(request, AuditLog.Action.ROLE_CHANGE, obj=user, extra={
+            "role": role,
+            "is_active": is_active,
+        })
         messages.success(request, f"Пользователь {user.full_name} обновлён")
         return redirect("manage:users")
 
@@ -78,6 +84,12 @@ class MembershipCreateView(AdminRequiredMixin, View):
             defaults={"role": role, "assigned_by": request.user},
         )
 
+        log_action(request, AuditLog.Action.DEPARTMENT_ASSIGN, obj=membership, extra={
+            "target_user": user.email,
+            "department": dept.name,
+            "department_role": role,
+            "created": created,
+        })
         action = "добавлен в" if created else "обновлён в"
         messages.success(
             request,
@@ -92,6 +104,11 @@ class MembershipDeleteView(AdminRequiredMixin, View):
         membership = get_object_or_404(DepartmentMembership, pk=pk)
         user_name = membership.user.full_name
         dept_name = membership.department.name
+        log_action(request, AuditLog.Action.DEPARTMENT_ASSIGN, obj=membership, extra={
+            "target_user": membership.user.email,
+            "department": dept_name,
+            "revoked": True,
+        })
         membership.delete()
         messages.success(request, f"{user_name} удалён из отдела «{dept_name}»")
         return redirect("manage:users")
@@ -232,6 +249,14 @@ class FolderPermissionCreateView(AdminRequiredMixin, View):
             return redirect("manage:folders")
 
         state = "создано" if created else "обновлено"
+        log_action(request, AuditLog.Action.PERMISSION_GRANT, obj=permission, extra={
+            "folder": str(folder.id),
+            "folder_name": folder.full_path,
+            "subject": permission.subject_label,
+            "access": permission.access,
+            "effect": permission.effect,
+            "created": created,
+        })
         messages.success(
             request,
             f"Право «{permission.get_access_display()}» для {permission.subject_label} {state}"
@@ -248,6 +273,13 @@ class FolderPermissionDeleteView(AdminRequiredMixin, View):
         permission = get_object_or_404(FolderPermission, pk=pk)
         label = permission.subject_label
         action = permission.get_access_display()
+        log_action(request, AuditLog.Action.PERMISSION_REVOKE, obj=permission, extra={
+            "folder": str(permission.folder_id),
+            "folder_name": permission.folder.full_path,
+            "subject": label,
+            "access": permission.access,
+            "effect": permission.effect,
+        })
         permission.delete()
         messages.success(request, f"Право «{action}» для {label} отозвано")
         return redirect("manage:folders")

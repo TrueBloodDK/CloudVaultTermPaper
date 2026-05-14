@@ -4,6 +4,7 @@ import pytest
 from django.urls import reverse
 from rest_framework.test import APIClient
 
+from audit.models import AuditLog
 from files.models import File, Folder, FolderPermission, FilePermission
 from users.rbac import PermissionAction
 
@@ -72,6 +73,12 @@ class TestApiRbacPermissions:
 
         assert resp.status_code == 200
         assert FilePermission.objects.filter(file=file_obj, user=target_user).exists()
+        assert AuditLog.objects.filter(
+            user=another_user,
+            action=AuditLog.Action.PERMISSION_GRANT,
+            extra__target_user=target_user.email,
+            extra__access=FilePermission.Access.READ,
+        ).exists()
 
     def test_cannot_grant_permission_above_own_access(
         self, api_client, another_user, regular_user, django_user_model, folder_with_file

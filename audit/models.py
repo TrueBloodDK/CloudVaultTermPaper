@@ -23,6 +23,10 @@ class AuditLog(models.Model):
         FILE_VIEW = "file_view", "Просмотр файла"
         USER_CREATE = "user_create", "Создание пользователя"
         USER_UPDATE = "user_update", "Изменение пользователя"
+        PERMISSION_GRANT = "permission_grant", "Выдача права доступа"
+        PERMISSION_REVOKE = "permission_revoke", "Отзыв права доступа"
+        ROLE_CHANGE = "role_change", "Изменение роли"
+        DEPARTMENT_ASSIGN = "department_assign", "Назначение в отдел"
         ACCESS_DENIED = "access_denied", "Отказ в доступе"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

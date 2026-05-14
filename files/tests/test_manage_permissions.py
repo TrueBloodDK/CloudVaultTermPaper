@@ -3,6 +3,7 @@
 import pytest
 from django.urls import reverse
 
+from audit.models import AuditLog
 from files.models import Folder, FolderPermission
 from users.models import Department, DepartmentMembership
 from users.rbac import PermissionAction, PermissionEffect
@@ -21,7 +22,7 @@ def manage_department(db):
 @pytest.mark.django_db
 class TestManageFolderPermissions:
     def test_system_admin_can_grant_user_folder_permission(
-        self, admin_client, manage_folder, another_user
+        self, admin_client, manage_folder, another_user, admin_user
     ):
         resp = admin_client.post(
             reverse("manage:folder-permission-create", args=[manage_folder.id]),
@@ -39,6 +40,12 @@ class TestManageFolderPermissions:
             user=another_user,
             access=PermissionAction.VIEW,
             effect=PermissionEffect.ALLOW,
+        ).exists()
+        assert AuditLog.objects.filter(
+            user=admin_user,
+            action=AuditLog.Action.PERMISSION_GRANT,
+            extra__subject=str(another_user),
+            extra__access=PermissionAction.VIEW,
         ).exists()
 
     def test_system_admin_can_grant_department_role_permission(
@@ -79,6 +86,12 @@ class TestManageFolderPermissions:
 
         assert resp.status_code == 302
         assert not FolderPermission.objects.filter(pk=permission.pk).exists()
+        assert AuditLog.objects.filter(
+            user=admin_user,
+            action=AuditLog.Action.PERMISSION_REVOKE,
+            extra__subject=str(another_user),
+            extra__access=PermissionAction.VIEW,
+        ).exists()
 
     def test_regular_user_cannot_grant_folder_permission(
         self, auth_client, manage_folder, another_user

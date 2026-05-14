@@ -247,10 +247,17 @@ class FileShareView(LoginRequiredMixin, View):
             messages.error(request, "Нельзя выдать право выше собственного")
             return redirect("files:list")
 
-        FilePermission.objects.update_or_create(
+        permission, created = FilePermission.objects.update_or_create(
             file=file_obj, user=target_user,
             defaults={"access": access, "granted_by": request.user},
         )
+        log_action(request, AuditLog.Action.PERMISSION_GRANT, obj=permission, extra={
+            "file": str(file_obj.id),
+            "file_name": file_obj.original_name,
+            "target_user": target_user.email,
+            "access": access,
+            "created": created,
+        })
         messages.success(request, f"Доступ для {target_user.email} предоставлен")
         return redirect("files:list")
 
