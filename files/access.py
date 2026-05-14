@@ -224,6 +224,23 @@ def can_access_file(user, file_obj, request=None):
     return False
 
 
+def can_perform_file_action(user, file_obj, action):
+    """Единая проверка действия над файлом."""
+    if action in (
+        PermissionAction.VIEW,
+        PermissionAction.READ,
+        PermissionAction.DOWNLOAD,
+    ):
+        return can_access_file(user, file_obj)
+    if action == PermissionAction.DELETE:
+        return can_delete_file(user, file_obj)
+    if action == PermissionAction.SHARE:
+        return can_share_file(user, file_obj)
+    if action in (PermissionAction.UPDATE, PermissionAction.MANAGE):
+        return user.is_system_admin or file_obj.owner == user
+    return False
+
+
 def can_delete_file(user, file_obj):
     """Системный админ и руководитель отдела — любой файл. Рядовой — только свои."""
     if user.is_system_admin or file_obj.owner == user:
@@ -259,6 +276,23 @@ def can_share_file(user, file_obj):
     if file_obj.folder and file_obj.folder.department_id:
         return is_dept_head(user, file_obj.folder.department)
     return False
+
+
+def can_grant_file_permission(user, file_obj, action):
+    """
+    Может ли пользователь выдать другому пользователю конкретное право.
+
+    Делегирование требует двух вещей:
+      1. права SHARE на файл или его папку;
+      2. собственного права на действие, которое пользователь выдаёт.
+    """
+    if user.is_system_admin or file_obj.owner == user:
+        return True
+    return can_share_file(user, file_obj) and can_perform_file_action(
+        user,
+        file_obj,
+        action,
+    )
 
 
 def can_upload_to_folder(user, folder):

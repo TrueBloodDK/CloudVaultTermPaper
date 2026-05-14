@@ -19,6 +19,7 @@ from .serializers import (
 from .encryption import encrypt_file, decrypt_file, compute_checksum
 from .access import (
     can_access_file,
+    can_grant_file_permission,
     can_delete_file,
     can_share_file,
     get_accessible_files,
@@ -151,6 +152,13 @@ class FileShareView(APIView):
 
         serializer = FilePermissionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        access = serializer.validated_data["access"]
+
+        if not can_grant_file_permission(request.user, file_obj, access):
+            return Response(
+                {"detail": "Нельзя выдать право выше собственного"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         target_user = get_object_or_404(User, email=serializer.validated_data["user_email"])
 
@@ -158,7 +166,7 @@ class FileShareView(APIView):
             file=file_obj,
             user=target_user,
             defaults={
-                "access": serializer.validated_data["access"],
+                "access": access,
                 "granted_by": request.user,
             },
         )

@@ -12,7 +12,8 @@ from files.models import File, FilePermission, Folder
 from files.encryption import encrypt_file, decrypt_file, compute_checksum
 from files.serializers import FileUploadSerializer
 from files.access import (
-    can_access_file, can_access_folder, can_delete_file, can_share_file,
+    can_access_file, can_access_folder, can_delete_file,
+    can_grant_file_permission, can_share_file,
     can_upload_to_folder, can_manage_folder,
     get_accessible_files, get_accessible_folders,
 )
@@ -240,6 +241,10 @@ class FileShareView(LoginRequiredMixin, View):
 
         if target_user == request.user:
             messages.error(request, "Нельзя предоставить доступ самому себе")
+            return redirect("files:list")
+
+        if not can_grant_file_permission(request.user, file_obj, access):
+            messages.error(request, "Нельзя выдать право выше собственного")
             return redirect("files:list")
 
         FilePermission.objects.update_or_create(

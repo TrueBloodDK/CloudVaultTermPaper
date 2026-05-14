@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 from files.access import (
     can_access_file,
     can_access_folder,
+    can_grant_file_permission,
     can_manage_folder,
     can_upload_to_folder,
     get_accessible_files,
@@ -243,3 +244,47 @@ class TestFolderPermissionAccess:
 
         assert can_access_file(another_user, file_obj) is True
         assert file_obj in get_accessible_files(another_user)
+
+    def test_share_permission_does_not_grant_download_delegation(
+        self, regular_user, another_user, sample_file
+    ):
+        folder = Folder.objects.create(name="Share only", owner=regular_user)
+        sample_file.folder = folder
+        sample_file.save(update_fields=["folder"])
+        FolderPermission.objects.create(
+            folder=folder,
+            user=another_user,
+            access=PermissionAction.SHARE,
+            granted_by=regular_user,
+        )
+
+        assert can_grant_file_permission(
+            another_user,
+            sample_file,
+            PermissionAction.DOWNLOAD,
+        ) is False
+
+    def test_share_and_download_allow_download_delegation(
+        self, regular_user, another_user, sample_file
+    ):
+        folder = Folder.objects.create(name="Share and download", owner=regular_user)
+        sample_file.folder = folder
+        sample_file.save(update_fields=["folder"])
+        FolderPermission.objects.create(
+            folder=folder,
+            user=another_user,
+            access=PermissionAction.SHARE,
+            granted_by=regular_user,
+        )
+        FolderPermission.objects.create(
+            folder=folder,
+            user=another_user,
+            access=PermissionAction.DOWNLOAD,
+            granted_by=regular_user,
+        )
+
+        assert can_grant_file_permission(
+            another_user,
+            sample_file,
+            PermissionAction.DOWNLOAD,
+        ) is True
