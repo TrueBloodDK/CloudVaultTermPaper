@@ -54,9 +54,17 @@ class FileDetailSerializer(serializers.ModelSerializer):
         ]
 
     def get_permissions(self, obj):
-        perms = obj.permissions.select_related("user").all()
+        perms = obj.permissions.select_related("user", "department").all()
         return [
-            {"user": p.user.email, "access": p.access, "granted_at": p.granted_at}
+            {
+                "subject": p.subject_label,
+                "user": p.user.email if p.user_id else None,
+                "department": p.department.name if p.department_id else None,
+                "department_role": p.department_role or None,
+                "access": p.access,
+                "effect": p.effect,
+                "granted_at": p.granted_at,
+            }
             for p in perms
         ]
 
