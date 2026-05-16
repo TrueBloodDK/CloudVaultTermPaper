@@ -4,8 +4,11 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
+from audit.models import AuditLog
 from files.models import File, FilePermission
 from files.encryption import decrypt_file, compute_checksum
+from users.models import Department
+from users.rbac import PermissionEffect
 
 
 @pytest.mark.django_db
@@ -205,6 +208,83 @@ class TestFileShare:
         })
         assert resp.status_code == 302
         assert not FilePermission.objects.filter(file=sample_file).exists()
+
+    def test_owner_can_share_with_department(self, auth_client, sample_file):
+        department = Department.objects.create(name="Бухгалтерия")
+        url = reverse("files:share", args=[sample_file.id])
+
+        resp = auth_client.post(url, {
+            "subject_type": "department",
+            "department": department.id,
+            "access": FilePermission.Access.READ,
+            "effect": PermissionEffect.ALLOW,
+        })
+
+        assert resp.status_code == 302
+        assert FilePermission.objects.filter(
+            file=sample_file,
+            department=department,
+            department_role="",
+            access=FilePermission.Access.READ,
+            effect=PermissionEffect.ALLOW,
+        ).exists()
+
+    def test_owner_can_create_deny_rule(self, auth_client, sample_file, another_user):
+        url = reverse("files:share", args=[sample_file.id])
+
+        resp = auth_client.post(url, {
+            "subject_type": "user",
+            "user_email": another_user.email,
+            "access": FilePermission.Access.DOWNLOAD,
+            "effect": PermissionEffect.DENY,
+        })
+
+        assert resp.status_code == 302
+        assert FilePermission.objects.filter(
+            file=sample_file,
+            user=another_user,
+            access=FilePermission.Access.DOWNLOAD,
+            effect=PermissionEffect.DENY,
+        ).exists()
+
+    def test_owner_can_revoke_file_permission(
+        self, auth_client, regular_user, sample_file, another_user
+    ):
+        permission = FilePermission.objects.create(
+            file=sample_file,
+            user=another_user,
+            access=FilePermission.Access.READ,
+            granted_by=regular_user,
+        )
+
+        resp = auth_client.post(
+            reverse("files:permission-delete", args=[permission.id])
+        )
+
+        assert resp.status_code == 302
+        assert not FilePermission.objects.filter(pk=permission.pk).exists()
+        assert AuditLog.objects.filter(
+            user=regular_user,
+            action=AuditLog.Action.PERMISSION_REVOKE,
+            extra__subject=str(another_user),
+            extra__access=FilePermission.Access.READ,
+        ).exists()
+
+    def test_non_owner_cannot_revoke_file_permission(
+        self, client, another_user, sample_file
+    ):
+        permission = FilePermission.objects.create(
+            file=sample_file,
+            user=another_user,
+            access=FilePermission.Access.READ,
+            granted_by=sample_file.owner,
+        )
+        client.force_login(another_user)
+
+        resp = client.post(reverse("files:permission-delete", args=[permission.id]))
+
+        assert resp.status_code == 302
+        assert FilePermission.objects.filter(pk=permission.pk).exists()
 
     def test_cannot_share_with_yourself(self, auth_client, regular_user, sample_file):
         url = reverse("files:share", args=[sample_file.id])

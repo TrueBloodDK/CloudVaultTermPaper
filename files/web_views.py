@@ -17,7 +17,8 @@ from files.access import (
     can_upload_to_folder, can_manage_folder,
     get_accessible_files, get_accessible_folders,
 )
-from users.models import User
+from users.models import Department, DepartmentMembership, User
+from users.rbac import PermissionEffect
 from audit.models import AuditLog
 from audit.utils import log_action
 
@@ -39,16 +40,26 @@ class FileListView(LoginRequiredMixin, View):
             breadcrumbs = current_folder.get_breadcrumbs()
 
         subfolders = get_accessible_folders(request.user, parent=current_folder)
-        files = get_accessible_files(request.user).filter(folder=current_folder)
+        files = list(
+            get_accessible_files(request.user)
+            .filter(folder=current_folder)
+            .prefetch_related("permissions__user", "permissions__department")
+        )
+        for file_obj in files:
+            file_obj.can_manage_permissions = can_share_file(request.user, file_obj)
+            file_obj.can_delete = can_delete_file(request.user, file_obj)
 
-        from users.models import Department
         return render(request, self.template_name, {
             "files": files,
             "subfolders": subfolders,
             "current_folder": current_folder,
             "breadcrumbs": breadcrumbs,
             "can_upload": _can_upload_here(request.user, current_folder),
-            "departments": Department.objects.all() if request.user.is_system_admin else [],
+            "departments": Department.objects.all(),
+            "users": User.objects.filter(is_active=True).order_by("full_name"),
+            "permission_actions": FilePermission.Access.choices,
+            "permission_effects": PermissionEffect.choices,
+            "department_roles": DepartmentMembership.Role.choices,
         })
 
 
@@ -230,36 +241,77 @@ class FileShareView(LoginRequiredMixin, View):
             messages.error(request, "Только руководитель отдела или администратор может расшаривать файлы")
             return redirect("files:list")
 
-        target_email = request.POST.get("user_email", "").strip().lower()
+        subject_type = request.POST.get("subject_type", "user")
         access = request.POST.get("access", FilePermission.Access.READ)
+        effect = request.POST.get("effect", PermissionEffect.ALLOW)
 
-        try:
-            target_user = User.objects.get(email=target_email)
-        except User.DoesNotExist:
-            messages.error(request, f"Пользователь «{target_email}» не найден")
+        if access not in [choice[0] for choice in FilePermission.Access.choices]:
+            messages.error(request, "Неверный уровень доступа")
             return redirect("files:list")
 
-        if target_user == request.user:
-            messages.error(request, "Нельзя предоставить доступ самому себе")
+        if effect not in [choice[0] for choice in PermissionEffect.choices]:
+            messages.error(request, "Неверное правило доступа")
             return redirect("files:list")
 
         if not can_grant_file_permission(request.user, file_obj, access):
             messages.error(request, "Нельзя выдать право выше собственного")
             return redirect("files:list")
 
+        subject, lookup, defaults = _build_file_permission_lookup(
+            request,
+            file_obj,
+            subject_type,
+            access,
+            effect,
+        )
+        if subject is None:
+            return _back(str(file_obj.folder_id) if file_obj.folder else None)
+
         permission, created = FilePermission.objects.update_or_create(
-            file=file_obj, user=target_user,
-            defaults={"access": access, "granted_by": request.user},
+            **lookup,
+            defaults=defaults,
         )
         log_action(request, AuditLog.Action.PERMISSION_GRANT, obj=permission, extra={
             "file": str(file_obj.id),
             "file_name": file_obj.original_name,
-            "target_user": target_user.email,
+            "subject": permission.subject_label,
             "access": access,
+            "effect": effect,
             "created": created,
         })
-        messages.success(request, f"Доступ для {target_user.email} предоставлен")
-        return redirect("files:list")
+        messages.success(request, f"Доступ для {subject} сохранён")
+        return _back(str(file_obj.folder_id) if file_obj.folder else None)
+
+
+class FilePermissionDeleteView(LoginRequiredMixin, View):
+    """POST /files/permissions/<id>/delete/ — отозвать право на файл."""
+    login_url = "/auth/login/"
+
+    def post(self, request, pk):
+        permission = get_object_or_404(
+            FilePermission.objects.select_related("file", "user", "department"),
+            pk=pk,
+        )
+        file_obj = permission.file
+        folder_id = str(file_obj.folder_id) if file_obj.folder else None
+
+        if not can_share_file(request.user, file_obj):
+            messages.error(request, "Нет прав для отзыва доступа")
+            return _back(folder_id)
+
+        subject = permission.subject_label
+        access = permission.access
+        effect = permission.effect
+        log_action(request, AuditLog.Action.PERMISSION_REVOKE, obj=permission, extra={
+            "file": str(file_obj.id),
+            "file_name": file_obj.original_name,
+            "subject": subject,
+            "access": access,
+            "effect": effect,
+        })
+        permission.delete()
+        messages.success(request, f"Доступ для {subject} отозван")
+        return _back(folder_id)
 
 
 # ── Вспомогательные ───────────────────────────────────────────────────────────
@@ -276,6 +328,63 @@ def _soft_delete_folder_contents(folder):
     )
     for child in folder.children.all():
         _soft_delete_folder_contents(child)
+
+
+def _build_file_permission_lookup(request, file_obj, subject_type, access, effect):
+    defaults = {
+        "access": access,
+        "effect": effect,
+        "granted_by": request.user,
+    }
+
+    if subject_type == "user":
+        target_email = request.POST.get("user_email", "").strip().lower()
+        try:
+            target_user = User.objects.get(email=target_email)
+        except User.DoesNotExist:
+            messages.error(request, f"Пользователь «{target_email}» не найден")
+            return None, None, None
+
+        if target_user == request.user:
+            messages.error(request, "Нельзя предоставить доступ самому себе")
+            return None, None, None
+
+        return (
+            target_user,
+            {"file": file_obj, "user": target_user, "access": access},
+            defaults | {"department": None, "department_role": ""},
+        )
+
+    if subject_type in ("department", "department_role"):
+        dept_id = request.POST.get("department")
+        if not dept_id:
+            messages.error(request, "Выберите отдел")
+            return None, None, None
+
+        department = get_object_or_404(Department, pk=dept_id)
+        department_role = ""
+        if subject_type == "department_role":
+            department_role = request.POST.get(
+                "department_role",
+                DepartmentMembership.Role.MEMBER,
+            )
+            if department_role not in [choice[0] for choice in DepartmentMembership.Role.choices]:
+                messages.error(request, "Неверная роль в отделе")
+                return None, None, None
+
+        return (
+            department,
+            {
+                "file": file_obj,
+                "department": department,
+                "department_role": department_role,
+                "access": access,
+            },
+            defaults | {"user": None},
+        )
+
+    messages.error(request, "Неверный адресат права")
+    return None, None, None
 
 
 class FolderChangeDeptView(LoginRequiredMixin, View):
