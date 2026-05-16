@@ -51,6 +51,7 @@ python manage.py runserver
 | GET | `/api/v1/files/<id>/download/` | Скачать файл (с расшифровкой) |
 | DELETE | `/api/v1/files/<id>/delete/` | Удалить файл |
 | POST | `/api/v1/files/<id>/share/` | Поделиться файлом |
+| DELETE | `/api/v1/files/permissions/<id>/delete/` | Отозвать право доступа к файлу |
 | GET | `/api/v1/audit/` | Журнал аудита (security admin) |
 
 ## Механизмы безопасности
@@ -77,6 +78,8 @@ python manage.py runserver
 - изменения ролей, членства в отделах и прав доступа записываются в аудит.
 
 Подробная спецификация модели доступа находится в [docs/rbac.md](docs/rbac.md).
+Формат RBAC-запросов API описан в разделе
+[RBAC API](docs/rbac.md#rbac-api).
 
 ## Структура проекта
 
