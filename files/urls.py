@@ -8,6 +8,7 @@ from .views import (
     FileDownloadView,
     FileDeleteView,
     FileShareView,
+    FilePermissionDeleteView,
 )
 
 urlpatterns = [
@@ -17,4 +18,6 @@ urlpatterns = [
     path("<uuid:pk>/download/", FileDownloadView.as_view(), name="file-download"),
     path("<uuid:pk>/delete/", FileDeleteView.as_view(), name="file-delete"),
     path("<uuid:pk>/share/", FileShareView.as_view(), name="file-share"),
+    path("permissions/<int:pk>/delete/", FilePermissionDeleteView.as_view(),
+         name="file-permission-delete"),
 ]

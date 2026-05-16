@@ -6,7 +6,8 @@ from rest_framework.test import APIClient
 
 from audit.models import AuditLog
 from files.models import File, Folder, FolderPermission, FilePermission
-from users.rbac import PermissionAction
+from users.models import Department, DepartmentMembership
+from users.rbac import PermissionAction, PermissionEffect
 
 
 @pytest.fixture
@@ -105,3 +106,103 @@ class TestApiRbacPermissions:
 
         assert resp.status_code == 403
         assert not FilePermission.objects.filter(file=file_obj, user=target_user).exists()
+
+    def test_api_can_share_file_with_department(
+        self, api_client, regular_user, folder_with_file
+    ):
+        _, file_obj = folder_with_file
+        department = Department.objects.create(name="API department")
+        api_client.force_authenticate(user=regular_user)
+
+        resp = api_client.post(
+            reverse("file-share", args=[file_obj.id]),
+            {
+                "subject_type": "department",
+                "department": department.id,
+                "access": FilePermission.Access.READ,
+                "effect": PermissionEffect.ALLOW,
+            },
+            format="json",
+        )
+
+        assert resp.status_code == 200
+        assert resp.data["permission"]["subject"] == department.name
+        assert FilePermission.objects.filter(
+            file=file_obj,
+            department=department,
+            department_role="",
+            access=FilePermission.Access.READ,
+            effect=PermissionEffect.ALLOW,
+        ).exists()
+
+    def test_api_can_share_file_with_department_role_deny(
+        self, api_client, regular_user, folder_with_file
+    ):
+        _, file_obj = folder_with_file
+        department = Department.objects.create(name="API role department")
+        api_client.force_authenticate(user=regular_user)
+
+        resp = api_client.post(
+            reverse("file-share", args=[file_obj.id]),
+            {
+                "subject_type": "department_role",
+                "department": department.id,
+                "department_role": DepartmentMembership.Role.MEMBER,
+                "access": FilePermission.Access.DOWNLOAD,
+                "effect": PermissionEffect.DENY,
+            },
+            format="json",
+        )
+
+        assert resp.status_code == 200
+        assert FilePermission.objects.filter(
+            file=file_obj,
+            department=department,
+            department_role=DepartmentMembership.Role.MEMBER,
+            access=FilePermission.Access.DOWNLOAD,
+            effect=PermissionEffect.DENY,
+        ).exists()
+
+    def test_api_owner_can_revoke_file_permission(
+        self, api_client, regular_user, another_user, folder_with_file
+    ):
+        _, file_obj = folder_with_file
+        permission = FilePermission.objects.create(
+            file=file_obj,
+            user=another_user,
+            access=FilePermission.Access.READ,
+            granted_by=regular_user,
+        )
+        api_client.force_authenticate(user=regular_user)
+
+        resp = api_client.delete(
+            reverse("file-permission-delete", args=[permission.id])
+        )
+
+        assert resp.status_code == 200
+        assert not FilePermission.objects.filter(pk=permission.pk).exists()
+        assert AuditLog.objects.filter(
+            user=regular_user,
+            action=AuditLog.Action.PERMISSION_REVOKE,
+            extra__subject=str(another_user),
+            extra__access=FilePermission.Access.READ,
+        ).exists()
+
+    def test_api_user_without_share_cannot_revoke_file_permission(
+        self, api_client, another_user, folder_with_file
+    ):
+        _, file_obj = folder_with_file
+        permission = FilePermission.objects.create(
+            file=file_obj,
+            user=another_user,
+            access=FilePermission.Access.READ,
+            granted_by=file_obj.owner,
+        )
+        api_client.force_authenticate(user=another_user)
+
+        resp = api_client.delete(
+            reverse("file-permission-delete", args=[permission.id])
+        )
+
+        assert resp.status_code == 403
+        assert FilePermission.objects.filter(pk=permission.pk).exists()

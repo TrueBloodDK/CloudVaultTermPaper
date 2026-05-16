@@ -24,7 +24,6 @@ from .access import (
     can_share_file,
     get_accessible_files,
 )
-from users.models import User
 from audit.models import AuditLog
 from audit.utils import log_action
 
@@ -153,6 +152,7 @@ class FileShareView(APIView):
         serializer = FilePermissionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         access = serializer.validated_data["access"]
+        effect = serializer.validated_data["effect"]
 
         if not can_grant_file_permission(request.user, file_obj, access):
             return Response(
@@ -160,26 +160,105 @@ class FileShareView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        target_user = get_object_or_404(User, email=serializer.validated_data["user_email"])
+        lookup, defaults = _build_file_permission_data(
+            file_obj,
+            request.user,
+            serializer.validated_data,
+        )
 
         perm, created = FilePermission.objects.update_or_create(
-            file=file_obj,
-            user=target_user,
-            defaults={
-                "access": access,
-                "granted_by": request.user,
-            },
+            **lookup,
+            defaults=defaults,
         )
 
-        log_action(request, AuditLog.Action.PERMISSION_GRANT, obj=perm, extra={
+        extra = {
             "file": str(file_obj.id),
             "file_name": file_obj.original_name,
-            "target_user": target_user.email,
+            "subject": perm.subject_label,
             "access": access,
+            "effect": effect,
             "created": created,
-        })
+        }
+        if perm.user_id:
+            extra["target_user"] = perm.user.email
+        log_action(request, AuditLog.Action.PERMISSION_GRANT, obj=perm, extra=extra)
         action = "создан" if created else "обновлён"
         return Response(
-            {"detail": f"Доступ {action} для {target_user.email}"},
+            {
+                "detail": f"Доступ {action} для {perm.subject_label}",
+                "permission": {
+                    "id": perm.id,
+                    "subject": perm.subject_label,
+                    "access": perm.access,
+                    "effect": perm.effect,
+                },
+            },
             status=status.HTTP_200_OK,
         )
+
+
+class FilePermissionDeleteView(APIView):
+    """DELETE /api/v1/files/permissions/<id>/delete/ — отзыв доступа."""
+
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk):
+        perm = get_object_or_404(
+            FilePermission.objects.select_related("file", "user", "department"),
+            pk=pk,
+        )
+
+        if not can_share_file(request.user, perm.file):
+            return Response(
+                {"detail": "Нет прав для отзыва доступа к файлу"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        extra = {
+            "file": str(perm.file_id),
+            "file_name": perm.file.original_name,
+            "subject": perm.subject_label,
+            "access": perm.access,
+            "effect": perm.effect,
+        }
+        if perm.user_id:
+            extra["target_user"] = perm.user.email
+        log_action(request, AuditLog.Action.PERMISSION_REVOKE, obj=perm, extra=extra)
+        subject = perm.subject_label
+        perm.delete()
+        return Response(
+            {"detail": f"Доступ для {subject} отозван"},
+            status=status.HTTP_200_OK,
+        )
+
+
+def _build_file_permission_data(file_obj, granted_by, data):
+    subject_type = data["subject_type"]
+    access = data["access"]
+    defaults = {
+        "access": access,
+        "effect": data["effect"],
+        "granted_by": granted_by,
+    }
+
+    if subject_type == FilePermissionSerializer.SubjectType.USER:
+        target_user = data["target_user"]
+        return (
+            {"file": file_obj, "user": target_user, "access": access},
+            defaults | {"department": None, "department_role": ""},
+        )
+
+    department = data["department"]
+    department_role = ""
+    if subject_type == FilePermissionSerializer.SubjectType.DEPARTMENT_ROLE:
+        department_role = data["department_role"]
+
+    return (
+        {
+            "file": file_obj,
+            "department": department,
+            "department_role": department_role,
+            "access": access,
+        },
+        defaults | {"user": None},
+    )

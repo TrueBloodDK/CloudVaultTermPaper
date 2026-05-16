@@ -3,6 +3,8 @@
 from rest_framework import serializers
 from django.conf import settings
 from .models import File, FilePermission
+from users.models import Department, DepartmentMembership, User
+from users.rbac import PermissionEffect
 
 
 class FileUploadSerializer(serializers.ModelSerializer):
@@ -70,10 +72,79 @@ class FileDetailSerializer(serializers.ModelSerializer):
 
 
 class FilePermissionSerializer(serializers.ModelSerializer):
-    """Предоставление доступа к файлу другому пользователю."""
+    """Предоставление доступа к файлу пользователю, отделу или роли отдела."""
 
-    user_email = serializers.EmailField(write_only=True)
+    class SubjectType:
+        USER = "user"
+        DEPARTMENT = "department"
+        DEPARTMENT_ROLE = "department_role"
+
+        CHOICES = (
+            (USER, "Пользователь"),
+            (DEPARTMENT, "Отдел"),
+            (DEPARTMENT_ROLE, "Роль в отделе"),
+        )
+
+    subject_type = serializers.ChoiceField(
+        choices=SubjectType.CHOICES,
+        default=SubjectType.USER,
+        write_only=True,
+    )
+    user_email = serializers.EmailField(write_only=True, required=False)
+    department = serializers.PrimaryKeyRelatedField(
+        queryset=Department.objects.all(),
+        required=False,
+        write_only=True,
+    )
+    department_role = serializers.ChoiceField(
+        choices=DepartmentMembership.Role.choices,
+        required=False,
+        allow_blank=True,
+        write_only=True,
+    )
+    access = serializers.ChoiceField(choices=FilePermission.Access.choices)
+    effect = serializers.ChoiceField(
+        choices=PermissionEffect.choices,
+        default=PermissionEffect.ALLOW,
+    )
 
     class Meta:
         model = FilePermission
-        fields = ["user_email", "access"]
+        fields = [
+            "subject_type",
+            "user_email",
+            "department",
+            "department_role",
+            "access",
+            "effect",
+        ]
+
+    def validate(self, attrs):
+        subject_type = attrs.get("subject_type", self.SubjectType.USER)
+
+        if subject_type == self.SubjectType.USER:
+            email = attrs.get("user_email")
+            if not email:
+                raise serializers.ValidationError({
+                    "user_email": "Email пользователя обязателен."
+                })
+            try:
+                attrs["target_user"] = User.objects.get(email=email.lower())
+            except User.DoesNotExist as exc:
+                raise serializers.ValidationError({
+                    "user_email": "Пользователь не найден."
+                }) from exc
+            return attrs
+
+        if subject_type in (self.SubjectType.DEPARTMENT, self.SubjectType.DEPARTMENT_ROLE):
+            if not attrs.get("department"):
+                raise serializers.ValidationError({
+                    "department": "Отдел обязателен."
+                })
+            if subject_type == self.SubjectType.DEPARTMENT_ROLE and not attrs.get("department_role"):
+                raise serializers.ValidationError({
+                    "department_role": "Роль в отделе обязательна."
+                })
+            return attrs
+
+        raise serializers.ValidationError({"subject_type": "Неверный адресат права."})
